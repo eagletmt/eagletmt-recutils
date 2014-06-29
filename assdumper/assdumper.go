@@ -1,5 +1,6 @@
 package main
 
+import "bufio"
 import "fmt"
 import "io"
 import "os"
@@ -43,18 +44,20 @@ func main() {
 		}
 	}()
 
+	reader := bufio.NewReader(fin)
+
 	buf := make([]byte, TS_PACKET_SIZE)
 	state := new(AnalyzerState)
 	state.pcrPid = -1
 	state.captionPid = -1
 
 	for {
-		n, err := fin.Read(buf)
-		if err != nil && err != io.EOF {
-			panic(err)
-		}
-		if n == 0 {
+		err := readFull(reader, buf)
+		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			panic(err)
 		}
 
 		analyzePacket(buf, state)
@@ -65,6 +68,17 @@ func assertSyncByte(packet []byte) {
 	if packet[0] != 0x47 {
 		panic("sync_byte failed")
 	}
+}
+
+func readFull(reader *bufio.Reader, buf []byte) error {
+	for i := 0; i < len(buf); {
+		n, err := reader.Read(buf[i:])
+		if err != nil {
+			return err
+		}
+		i += n
+	}
+	return nil
 }
 
 func analyzePacket(packet []byte, state *AnalyzerState) {
