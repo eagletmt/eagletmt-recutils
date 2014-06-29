@@ -13,11 +13,15 @@ import "time"
 const TS_PACKET_SIZE = 188
 
 type AnalyzerState struct {
-	pmtPids          map[int]bool
-	pcrPid           int
-	captionPid       int
-	currentTimestamp SystemClock
-	clockOffset      int64
+	pmtPids           map[int]bool
+	pcrPid            int
+	captionPid        int
+	currentTimestamp  SystemClock
+	clockOffset       int64
+	previousSubtitle  string
+	previousIsBlank   bool
+	previousTimestamp SystemClock
+	preludePrinted    bool
 }
 
 type SystemClock int64
@@ -105,6 +109,10 @@ func analyzePacket(packet []byte, state *AnalyzerState) {
 			t := extractJstTime(p[1:])
 			if t != 0 {
 				state.clockOffset = t*100 - state.currentTimestamp.centitime()
+			}
+		} else if pid == state.captionPid {
+			if payload_unit_start_indicator {
+				dumpCaption(p, state)
 			}
 		}
 	}
@@ -217,6 +225,78 @@ func extractJstTime(payload []byte) int64 {
 
 func decodeBcd(n byte) int {
 	return (int(n)>>4)*10 + int(n&0x0f)
+}
+
+func dumpCaption(payload []byte, state *AnalyzerState) {
+	PES_header_data_length := payload[8]
+	PES_data_packet_header_length := payload[11+PES_header_data_length] & 0x0F
+	p := payload[12+PES_header_data_length+PES_data_packet_header_length:]
+
+	// [B24] Table 9-1 (p184)
+	data_group_id := (p[0] & 0xFC) >> 2
+	if data_group_id == 0x00 || data_group_id == 0x20 {
+		// [B24] Table 9-3 (p186)
+		// caption_management_data
+		num_languages := p[6]
+		p = p[7+num_languages*5:]
+	} else {
+		// caption_data
+		p = p[6:]
+	}
+	// [B24] Table 9-3 (p186)
+	data_unit_loop_length := (int(p[0]) << 16) | (int(p[1]) << 8) | int(p[2])
+	index := 0
+	for index < data_unit_loop_length {
+		q := p[index:]
+		data_unit_parameter := q[4]
+		data_unit_size := (int(q[5]) << 16) | (int(q[6]) << 8) | int(q[7])
+		if data_unit_parameter == 0x20 {
+			if len(state.previousSubtitle) != 0 && !(isBlank(state.previousSubtitle) && state.previousIsBlank) {
+				prevTimeCenti := state.previousTimestamp.centitime() + state.clockOffset
+				curTimeCenti := state.currentTimestamp.centitime() + state.clockOffset
+				prevTime := prevTimeCenti / 100
+				curTime := curTimeCenti / 100
+				prevCenti := prevTimeCenti % 100
+				curCenti := curTimeCenti % 100
+				prev := time.Unix(prevTime, 0)
+				cur := time.Unix(curTime, 0)
+				if !state.preludePrinted {
+					printPrelude()
+					state.preludePrinted = true
+				}
+				fmt.Printf("Dialogue: 0,%02d:%02d:%02d.%02d,%02d:%02d:%02d.%02d,Default,,,,,,%s\n",
+					prev.Hour(), prev.Minute(), prev.Second(), prevCenti,
+					cur.Hour(), cur.Minute(), cur.Second(), curCenti,
+					state.previousSubtitle)
+			}
+			state.previousIsBlank = isBlank(state.previousSubtitle)
+			state.previousSubtitle = decodeCprofile(q[8:], data_unit_size)
+			state.previousTimestamp = state.currentTimestamp
+		}
+		index += 5 + data_unit_size
+	}
+}
+
+func isBlank(str string) bool {
+	for _, c := range str {
+		if c != ' ' {
+			return false
+		}
+	}
+	return true
+}
+
+func printPrelude() {
+	fmt.Println("[Script Info]")
+	fmt.Println("ScriptType: v4.00+")
+	fmt.Println("Collisions: Normal")
+	fmt.Println("ScaledBorderAndShadow: yes")
+	fmt.Println("Timer: 100.0000")
+	fmt.Println("\n[Events]")
+}
+
+func decodeCprofile(str []byte, length int) string {
+	return "dummy"
 }
 
 const K int64 = 27000000
