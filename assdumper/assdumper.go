@@ -3,6 +3,7 @@ package main
 import "fmt"
 import "io"
 import "os"
+import "time"
 
 /*
 [B10]: ARIB-STD B10
@@ -16,6 +17,7 @@ type AnalyzerState struct {
 	pcrPid           int
 	captionPid       int
 	currentTimestamp SystemClock
+	clockOffset      int64
 }
 
 type SystemClock int64
@@ -97,6 +99,13 @@ func analyzePacket(packet []byte, state *AnalyzerState) {
 					state.captionPid = captionPid
 				}
 			}
+		} else if pid == 0x0014 {
+			// Time Offset Table
+			// [B10] 5.2.9
+			t := extractJstTime(p[1:])
+			if t != 0 {
+				state.clockOffset = t*100 - state.currentTimestamp.centitime()
+			}
 		}
 	}
 }
@@ -176,4 +185,42 @@ func extractPcr(payload []byte) SystemClock {
 	pcr_ext := (int64(payload[5] & 0x01)) | int64(payload[6])
 	// [ISO] 2.4.2.2
 	return SystemClock(pcr_base*300 + pcr_ext)
+}
+
+func extractJstTime(payload []byte) int64 {
+	if payload[0] != 0x73 {
+		return 0
+	}
+
+	// [B10] Appendix C
+	MJD := (int(payload[3]) << 8) | int(payload[4])
+	y := int((float64(MJD) - 15078.2) / 365.25)
+	m := int((float64(MJD) - 14956.1 - float64(int(float64(y)*365.25))) / 30.6001)
+	k := 0
+	if m == 14 || m == 15 {
+		k = 1
+	}
+	year := y + k + 1900
+	month := m - 2 - k*12
+	day := MJD - 14956 - int(float64(y)*365.25) - int(float64(m)*30.6001)
+	hour := decodeBcd(payload[5])
+	minute := decodeBcd(payload[6])
+	second := decodeBcd(payload[7])
+
+	str := fmt.Sprintf("%d-%02d-%02dT%02d:%02d:%02d+09:00", year, month, day, hour, minute, second)
+	t, err := time.Parse(time.RFC3339, str)
+	if err != nil {
+		panic(err)
+	}
+	return t.Unix()
+}
+
+func decodeBcd(n byte) int {
+	return (int(n)>>4)*10 + int(n&0x0f)
+}
+
+const K int64 = 27000000
+
+func (clock SystemClock) centitime() int64 {
+	return int64(clock) / (K / 100)
 }
