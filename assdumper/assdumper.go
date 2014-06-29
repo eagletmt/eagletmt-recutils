@@ -25,6 +25,7 @@ type AnalyzerState struct {
 	previousIsBlank   bool
 	previousTimestamp SystemClock
 	preludePrinted    bool
+	captionPayload    []byte
 }
 
 type SystemClock int64
@@ -128,7 +129,15 @@ func analyzePacket(packet []byte, state *AnalyzerState) {
 			}
 		} else if pid == state.captionPid {
 			if payload_unit_start_indicator {
-				dumpCaption(p, state)
+				if len(state.captionPayload) != 0 {
+					dumpCaption(state.captionPayload, state)
+				}
+				state.captionPayload = make([]byte, len(p))
+				copy(state.captionPayload, p)
+			} else {
+				for _, b := range p {
+					state.captionPayload = append(state.captionPayload, b)
+				}
 			}
 		}
 	}
@@ -314,10 +323,6 @@ func printPrelude() {
 func decodeCprofile(bytes []byte, length int) string {
 	eucjpDecoder := japanese.EUCJP.NewDecoder()
 	decoded := ""
-
-	if length > len(bytes) {
-		length = len(bytes)
-	}
 
 	for i := 0; i < length; i++ {
 		b := bytes[i]
