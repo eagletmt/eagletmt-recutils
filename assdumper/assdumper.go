@@ -12,10 +12,13 @@ import "os"
 const TS_PACKET_SIZE = 188
 
 type AnalyzerState struct {
-	pmtPids    map[int]bool
-	pcrPid     int
-	captionPid int
+	pmtPids          map[int]bool
+	pcrPid           int
+	captionPid       int
+	currentTimestamp SystemClock
 }
+
+type SystemClock int64
 
 func main() {
 	if len(os.Args) == 1 {
@@ -66,8 +69,14 @@ func analyzePacket(packet []byte, state *AnalyzerState) {
 	p := packet[4:]
 
 	if hasAdaptation {
+		// [ISO] 2.4.3.4
+		// Table 2-6
 		adaptation_field_length := p[0]
 		p = p[1:]
+		pcr_flag := (p[0] & 0x10) != 0
+		if pcr_flag && pid == state.pcrPid {
+			state.currentTimestamp = extractPcr(p)
+		}
 		p = p[adaptation_field_length:]
 	}
 
@@ -106,7 +115,6 @@ func extractPmtPids(payload []byte) map[int]bool {
 		program_number := int(payload[index+0])<<8 | int(payload[index+1])
 		if program_number != 0 {
 			program_map_PID := int(payload[index+2]&0x1F)<<8 | int(payload[index+3])
-			fmt.Printf("program_number = %d, program_map_PID = %d\n", program_number, program_map_PID)
 			pids[program_map_PID] = true
 		}
 		index += 4
@@ -157,4 +165,15 @@ func extractCaptionPid(payload []byte) int {
 		index += 5 + ES_info_length
 	}
 	return -1
+}
+
+func extractPcr(payload []byte) SystemClock {
+	pcr_base := (int64(payload[1]) << 25) |
+		(int64(payload[2]) << 17) |
+		(int64(payload[3]) << 9) |
+		(int64(payload[4]) << 1) |
+		(int64(payload[5]&0x80) >> 7)
+	pcr_ext := (int64(payload[5] & 0x01)) | int64(payload[6])
+	// [ISO] 2.4.2.2
+	return SystemClock(pcr_base*300 + pcr_ext)
 }
