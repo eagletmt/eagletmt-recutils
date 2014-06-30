@@ -8,8 +8,18 @@ FFmpeg や MPlayer でうまく処理できるように MPEG-2 TS ファイル�
 FFmpeg に `av_find_best_stream` という API があり、これは解像度やビットレートから「主要な」ストリームを判断している。
 ほとんどの場合 `av_find_best_stream` でうまくいくが、マルチ編成時にサブチャンネルを選択することがあったので、Program id を判断基準にしている。
 
+## Requirements
+- ffmpeg >= 1.1
+
 ## Install
 ```sh
 cmake . -DCMAKE_BUILD_TYPE=release -DCMAKE_INSTALL_PREFIX=/usr
 make install
+```
+
+あるいは単純に
+
+```sh
+gcc -o clean-ts -O3 -lavcodec -lavformat -lavutil clean-ts.c
+cp clean-ts /usr/bin/clean-ts
 ```
