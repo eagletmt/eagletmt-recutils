@@ -94,11 +94,18 @@ func analyzePacket(packet []byte, state *AnalyzerState) {
 	if hasAdaptation {
 		// [ISO] 2.4.3.4
 		// Table 2-6
-		adaptation_field_length := p[0]
+		adaptation_field_length := int(p[0])
 		p = p[1:]
 		pcr_flag := (p[0] & 0x10) != 0
 		if pcr_flag && pid == state.pcrPid {
 			state.currentTimestamp = extractPcr(p)
+		}
+		if adaptation_field_length >= len(p) {
+			// TODO: adaptation_field_length could be bigger than
+			// one packet size. We should handle
+			// payload_unit_start_indicator and pointer_field more
+			// correctly.
+			return
 		}
 		p = p[adaptation_field_length:]
 	}
