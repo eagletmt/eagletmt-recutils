@@ -1,0 +1,28 @@
+h2 検索結果
+
+form method='get' action='/search'
+  input.search-field type='text' name='q' value=@query
+  input type='submit' value='検索'
+
+p= "ヒット: 全#{@search_total}件"
+
+table.search-results
+  thead
+    th 番組
+    th 字幕
+    th スコア
+  tbody
+    - @search_results.each do |search_result|
+      tr
+        td= search_result.program
+        td
+          ul
+            - search_result.captions.each do |caption|
+              li== caption
+        td= search_result.score
+
+p
+  - if @page > 0
+    a href="/search?q=#{@query}&page=#{@page-1}" < 前
+  - if (@page + 1) * @per_page < @search_total
+    a.next href="/search?q=#{@query}&page=#{@page+1}" 次 >
