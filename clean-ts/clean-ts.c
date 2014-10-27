@@ -32,12 +32,20 @@ static const int TS_PACKET_SIZE = 188;
 
 #define FAIL_IF_ERROR(s) err = (s); if (err < 0) goto fail
 
+#ifdef CLEAN_TS_DEBUG
+# define DPRINTF(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
+#else
+# define DPRINTF
+#endif
+
 static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVStream **in_video)
 {
   /* Select audio and video in the most small program id */
   static const int INVALID_PROGRAM_ID = 1000000000;
   int program_id = INVALID_PROGRAM_ID;
   unsigned i;
+
+  DPRINTF("nb_programs = %d\n", ic->nb_programs);
   for (i = 0; i < ic->nb_programs; i++) {
     AVProgram *program = ic->programs[i];
     AVStream *audio = NULL, *video = NULL;
@@ -50,8 +58,10 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVS
       switch (stream->codec->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
           audio = stream;
+          DPRINTF("programs[%d]: audio %u [0x%x]\n", program->id, stream->index, stream->id);
           break;
         case AVMEDIA_TYPE_VIDEO:
+          DPRINTF("programs[%d]: video %u [0x%x]\n", program->id, stream->index, stream->id);
           video = stream;
           break;
         default:

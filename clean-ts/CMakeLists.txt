@@ -9,7 +9,7 @@ link_libraries(${FFMPEG_LIBRARIES})
 
 add_definitions(-Wall -W)
 set(CMAKE_C_FLAGS_RELEASE "-O3")
-set(CMAKE_C_FLAGS_DEBUG "-Og -g")
+set(CMAKE_C_FLAGS_DEBUG "-Og -g -DCLEAN_TS_DEBUG")
 
 add_executable(clean-ts clean-ts.c)
 
