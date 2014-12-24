@@ -9,6 +9,6 @@ do
   FNAME="$(redis-cli -n $DB --raw BLPOP $QUEUE $TIMEOUT | tail -1)"
   echo "$FNAME"
   pushd "$PT_DIR"
-  ./enc.sh "$FNAME".ts && rm "$FNAME".ts
+  ./enc.rb "$FNAME".ts
   popd
 done
