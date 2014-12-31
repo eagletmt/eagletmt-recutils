@@ -241,7 +241,7 @@ func extractJstTime(payload []byte) int64 {
 		k = 1
 	}
 	year := y + k + 1900
-	month := m - 2 - k*12
+	month := m - 1 - k*12
 	day := MJD - 14956 - int(float64(y)*365.25) - int(float64(m)*30.6001)
 	hour := decodeBcd(payload[5])
 	minute := decodeBcd(payload[6])
