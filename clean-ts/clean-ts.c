@@ -172,7 +172,7 @@ fail:
 }
 
 static const int HD = 0x01, SD = 0x02;
-static const int HD_WIDTH = 1440, SD_WIDTH = 720;
+static const int FULL_HD_WIDTH = 1920, HD_WIDTH = 1440, SD_WIDTH = 720;
 
 static int detect_hd_sd(const char *infile, int64_t npackets)
 {
@@ -189,7 +189,7 @@ static int detect_hd_sd(const char *infile, int64_t npackets)
     const AVCodecContext *cc = ic->streams[i]->codec;
     if (cc->codec_type == AVMEDIA_TYPE_VIDEO
         && cc->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-      if (cc->width == HD_WIDTH) {
+      if (cc->width == HD_WIDTH || cc->width == FULL_HD_WIDTH) {
         ret |= HD;
       } else if (cc->width == SD_WIDTH) {
         ret |= SD;
