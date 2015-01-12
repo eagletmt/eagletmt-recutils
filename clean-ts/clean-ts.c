@@ -57,12 +57,16 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVS
       AVStream *stream = ic->streams[program->stream_index[j]];
       switch (stream->codec->codec_type) {
         case AVMEDIA_TYPE_AUDIO:
-          audio = stream;
-          DPRINTF("programs[%d]: audio %u [0x%x]\n", program->id, stream->index, stream->id);
+          DPRINTF("programs[%d]: audio %u [0x%x] duration=%" PRId64 "\n", program->id, stream->index, stream->id, stream->duration);
+          if (stream->duration > 0LL) {
+            audio = stream;
+          }
           break;
         case AVMEDIA_TYPE_VIDEO:
-          DPRINTF("programs[%d]: video %u [0x%x]\n", program->id, stream->index, stream->id);
-          video = stream;
+          DPRINTF("programs[%d]: video %u [0x%x] duration=%" PRId64 "\n", program->id, stream->index, stream->id, stream->duration);
+          if (stream->duration > 0LL) {
+            video = stream;
+          }
           break;
         default:
           break;
