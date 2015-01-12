@@ -199,7 +199,7 @@ static void detect_stream_status(const char *infile, int64_t npackets, int *hd_o
         }
         break;
       case AVMEDIA_TYPE_AUDIO:
-        if (cc->sample_fmt == AV_SAMPLE_FMT_NONE) {
+        if (cc->sample_fmt == AV_SAMPLE_FMT_NONE || cc->sample_rate == 0) {
           *valid_sample_fmt = 0;
         } else {
           if (*valid_sample_fmt == -1) {
