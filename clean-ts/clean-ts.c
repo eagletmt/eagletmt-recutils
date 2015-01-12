@@ -121,6 +121,7 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
     output_streams[i] = avformat_new_stream(oc, input_streams[i]->codec->codec);
     DPRINTF("%d: Copy from [0x%x]\n", output_streams[i]->index, input_streams[i]->id);
     FAIL_IF_ERROR(avcodec_copy_context(output_streams[i]->codec, input_streams[i]->codec));
+    output_streams[i]->time_base = input_streams[i]->time_base;
   }
   if (oc->oformat->flags & AVFMT_GLOBALHEADER) {
     for (i = 0; i < input_stream_size; i++) {
