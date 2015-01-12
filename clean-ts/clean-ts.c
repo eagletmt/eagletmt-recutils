@@ -59,13 +59,23 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVS
         case AVMEDIA_TYPE_AUDIO:
           DPRINTF("programs[%d]: audio %u [0x%x] duration=%" PRId64 "\n", program->id, stream->index, stream->id, stream->duration);
           if (stream->duration > 0LL) {
-            audio = stream;
+            if (audio == NULL) {
+              audio = stream;
+            } else {
+              fputs("Multiple audio stream found", stderr);
+              return AVERROR_STREAM_NOT_FOUND;
+            }
           }
           break;
         case AVMEDIA_TYPE_VIDEO:
           DPRINTF("programs[%d]: video %u [0x%x] duration=%" PRId64 "\n", program->id, stream->index, stream->id, stream->duration);
           if (stream->duration > 0LL) {
-            video = stream;
+            if (video == NULL) {
+              video = stream;
+            } else {
+              fputs("Multiple video stream found", stderr);
+              return AVERROR_STREAM_NOT_FOUND;
+            }
           }
           break;
         default:
