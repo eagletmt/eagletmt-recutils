@@ -62,7 +62,7 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVS
             if (audio == NULL) {
               audio = stream;
             } else {
-              fputs("Multiple audio stream found", stderr);
+              fputs("Multiple audio stream found\n", stderr);
               return AVERROR_STREAM_NOT_FOUND;
             }
           }
@@ -73,7 +73,7 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVS
             if (video == NULL) {
               video = stream;
             } else {
-              fputs("Multiple video stream found", stderr);
+              fputs("Multiple video stream found\n", stderr);
               return AVERROR_STREAM_NOT_FOUND;
             }
           }
