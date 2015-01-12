@@ -174,26 +174,41 @@ fail:
 static const int HD = 0x01, SD = 0x02;
 static const int FULL_HD_WIDTH = 1920, HD_WIDTH = 1440, SD_WIDTH = 720;
 
-static void detect_hd_sd(const char *infile, int64_t npackets, int *hd_or_sd)
+static void detect_stream_status(const char *infile, int64_t npackets, int *hd_or_sd, int *valid_sample_fmt)
 {
   AVFormatContext *ic = NULL;
   int err = 0;
   unsigned i;
 
   *hd_or_sd = 0;
+  *valid_sample_fmt = -1;
   FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
   avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
   FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
 
   for (i = 0; i < ic->nb_streams; i++) {
     const AVCodecContext *cc = ic->streams[i]->codec;
-    if (cc->codec_type == AVMEDIA_TYPE_VIDEO
-        && cc->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-      if (cc->width == HD_WIDTH || cc->width == FULL_HD_WIDTH) {
-        *hd_or_sd |= HD;
-      } else if (cc->width == SD_WIDTH) {
-        *hd_or_sd |= SD;
-      }
+    switch (cc->codec_type) {
+      case AVMEDIA_TYPE_VIDEO:
+        if (cc->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
+          if (cc->width == HD_WIDTH || cc->width == FULL_HD_WIDTH) {
+            *hd_or_sd |= HD;
+          } else if (cc->width == SD_WIDTH) {
+            *hd_or_sd |= SD;
+          }
+        }
+        break;
+      case AVMEDIA_TYPE_AUDIO:
+        if (cc->sample_fmt == AV_SAMPLE_FMT_NONE) {
+          *valid_sample_fmt = 0;
+        } else {
+          if (*valid_sample_fmt == -1) {
+            *valid_sample_fmt = 1;
+          }
+        }
+        break;
+      default:
+        break;
     }
   }
 
@@ -250,9 +265,12 @@ static int higher_p(const char *infile, int64_t npackets, int higher_is_hd)
     fprintf(stderr, "%s: Stray audio is found at %"PRId64"*188\n", infile, npackets);
     return 1;
   } else {
-    int hd_or_sd;
-    detect_hd_sd(infile, npackets, &hd_or_sd);
-    if ((hd_or_sd & HD) && (hd_or_sd & SD)) {
+    int hd_or_sd, valid_sample_fmt;
+    detect_stream_status(infile, npackets, &hd_or_sd, &valid_sample_fmt);
+    if (!valid_sample_fmt) {
+      DPRINTF("invalid sample_fmt at %" PRId64 "\n", npackets);
+      return 1;
+    } else if ((hd_or_sd & HD) && (hd_or_sd & SD)) {
       // If both are found, proper cutpoint is higher.
       return 1;
     } else if (hd_or_sd & HD) {
@@ -269,6 +287,7 @@ static int higher_p(const char *infile, int64_t npackets, int higher_is_hd)
 static int64_t find_cutpoint(const char *infile, int64_t lo, int64_t hi, int higher_is_hd)
 {
   while (lo < hi) {
+    DPRINTF("%" PRId64 " - %" PRId64 "\n", lo, hi);
     const int64_t mid = (lo + hi) / 2;
     const int r = higher_p(infile, mid, higher_is_hd);
     if (r < 0) {
@@ -294,34 +313,42 @@ int main(int argc, char *argv[])
 
   static const int MAX_PACKETS = 200000;
   int begin_hd_or_sd, end_hd_or_sd;
-  detect_hd_sd(infile, 0, &begin_hd_or_sd);
-  detect_hd_sd(infile, MAX_PACKETS, &end_hd_or_sd);
+  int begin_valid_sample_fmt, end_valid_sample_fmt;
+  detect_stream_status(infile, 0, &begin_hd_or_sd, &begin_valid_sample_fmt);
+  detect_stream_status(infile, MAX_PACKETS, &end_hd_or_sd, &end_valid_sample_fmt);
   const int begin_hd = begin_hd_or_sd & HD;
   const int end_hd = end_hd_or_sd & HD;
   int err;
-  DPRINTF("begin_hd_or_sd:%d end_hd_or_sd:%d\n", begin_hd_or_sd, end_hd_or_sd);
+  DPRINTF("begin: hd_or_sd:%d valid_sample_fmt:%d\n", begin_hd_or_sd, begin_valid_sample_fmt);
+  DPRINTF("end:   hd_or_sd:%d valid_sample_fmt:%d\n", end_hd_or_sd, end_valid_sample_fmt);
+  int64_t npackets = 0;
+
   if (begin_hd) {
     if (end_hd) {
-      err = clean_ts(infile, outfile, 0);
-    } else {
-      const int64_t npackets = find_cutpoint(infile, 0, MAX_PACKETS, 0);
-      if (npackets < 0) {
-        err = npackets;
-      } else {
-        err = clean_ts(infile, outfile, npackets);
+      if (!begin_valid_sample_fmt) {
+        npackets = find_cutpoint(infile, 0, MAX_PACKETS, 1);
+        DPRINTF("cutpoint for valid sample_fmt with HD: %" PRId64 "\n", npackets);
       }
+    } else {
+      npackets = find_cutpoint(infile, 0, MAX_PACKETS, 0);
+      DPRINTF("cutpoint for HD -> SD: %" PRId64 "\n", npackets);
     }
   } else {
     if (end_hd) {
-      const int64_t npackets = find_cutpoint(infile, 0, MAX_PACKETS, 1);
-      if (npackets < 0) {
-        err = npackets;
-      } else {
-        err = clean_ts(infile, outfile, npackets);
-      }
+      npackets = find_cutpoint(infile, 0, MAX_PACKETS, 1);
+      DPRINTF("cutpoint for SD -> HD: %" PRId64 "\n", npackets);
     } else {
-      err = clean_ts(infile, outfile, 0);
+      if (!begin_valid_sample_fmt) {
+        npackets = find_cutpoint(infile, 0, MAX_PACKETS, 0);
+        DPRINTF("cutpoint for valid sample_fmt with SD: %" PRId64 "\n", npackets);
+      }
     }
+  }
+
+  if (npackets < 0) {
+    err = npackets;
+  } else {
+    err = clean_ts(infile, outfile, npackets);
   }
 
   if (err < 0) {
