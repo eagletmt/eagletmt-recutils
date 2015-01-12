@@ -38,43 +38,46 @@ static const int TS_PACKET_SIZE = 188;
 # define DPRINTF(fmt, ...)
 #endif
 
-static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVStream **in_video)
+static int find_main_streams(const AVFormatContext *ic, AVStream **input_streams, size_t input_stream_size, size_t *num_found_ptr)
 {
   /* Select audio and video in the most small program id */
   static const int INVALID_PROGRAM_ID = 1000000000;
   int program_id = INVALID_PROGRAM_ID;
   unsigned i;
 
+  *num_found_ptr = 0;
   DPRINTF("nb_programs = %d\n", ic->nb_programs);
   for (i = 0; i < ic->nb_programs; i++) {
     AVProgram *program = ic->programs[i];
-    AVStream *audio = NULL, *video = NULL;
+    size_t num_found = 0;
     unsigned j;
+    int audio_found = 0, video_found = 0;
+
     if (program_id < program->id) {
       continue;
     }
     for (j = 0; j < program->nb_stream_indexes; j++) {
       AVStream *stream = ic->streams[program->stream_index[j]];
-      switch (stream->codec->codec_type) {
+      const enum AVMediaType media_type = stream->codec->codec_type;
+      switch (media_type) {
         case AVMEDIA_TYPE_AUDIO:
-          DPRINTF("programs[%d]: audio %u [0x%x] duration=%" PRId64 "\n", program->id, stream->index, stream->id, stream->duration);
+        case AVMEDIA_TYPE_VIDEO:
+          DPRINTF("programs[%d]: %s %u [0x%x] duration=%" PRId64 "\n",
+              program->id,
+              media_type == AVMEDIA_TYPE_AUDIO ? "audio" : "video",
+              stream->index,
+              stream->id,
+              stream->duration);
           if (stream->duration > 0LL) {
-            if (audio == NULL) {
-              audio = stream;
-            } else {
-              fputs("Multiple audio stream found\n", stderr);
+            if (num_found >= input_stream_size) {
+              fprintf(stderr, "Too many streams found: %zu\n", num_found);
               return AVERROR_STREAM_NOT_FOUND;
             }
-          }
-          break;
-        case AVMEDIA_TYPE_VIDEO:
-          DPRINTF("programs[%d]: video %u [0x%x] duration=%" PRId64 "\n", program->id, stream->index, stream->id, stream->duration);
-          if (stream->duration > 0LL) {
-            if (video == NULL) {
-              video = stream;
+            input_streams[num_found++] = stream;
+            if (media_type == AVMEDIA_TYPE_AUDIO) {
+              audio_found = 1;
             } else {
-              fputs("Multiple video stream found\n", stderr);
-              return AVERROR_STREAM_NOT_FOUND;
+              video_found = 1;
             }
           }
           break;
@@ -82,10 +85,9 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVS
           break;
       }
     }
-    if (audio != NULL && video != NULL) {
-      *in_audio = audio;
-      *in_video = video;
+    if (audio_found && video_found) {
       program_id = program->id;
+      *num_found_ptr = num_found;
     }
   }
   if (program_id == INVALID_PROGRAM_ID) {
@@ -99,7 +101,7 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
 {
   AVFormatContext *ic = NULL, *oc = NULL;
   int err = 0;
-  AVStream *in_audio = NULL, *in_video = NULL;
+  AVStream **output_streams = NULL;
 
   FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
   avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
@@ -107,16 +109,23 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
 
   av_log_set_level(AV_LOG_ERROR);
 
-  FAIL_IF_ERROR(find_main_streams(ic, &in_audio, &in_video));
+  AVStream *input_streams[8] = { NULL };
+  size_t input_stream_size;
+  FAIL_IF_ERROR(find_main_streams(ic, input_streams, sizeof(input_streams)/sizeof(input_streams[0]), &input_stream_size));
+  DPRINTF("%zu streams found\n", input_stream_size);
 
   FAIL_IF_ERROR(avformat_alloc_output_context2(&oc, NULL, NULL, outfile));
-  AVStream *out_video = avformat_new_stream(oc, in_video->codec->codec);
-  AVStream *out_audio = avformat_new_stream(oc, in_audio->codec->codec);
-  FAIL_IF_ERROR(avcodec_copy_context(out_video->codec, in_video->codec));
-  FAIL_IF_ERROR(avcodec_copy_context(out_audio->codec, in_audio->codec));
+  output_streams = av_mallocz_array(input_stream_size, sizeof(*output_streams));
+  size_t i;
+  for (i = 0; i < input_stream_size; i++) {
+    output_streams[i] = avformat_new_stream(oc, input_streams[i]->codec->codec);
+    DPRINTF("%d: Copy from [0x%x]\n", output_streams[i]->index, input_streams[i]->id);
+    FAIL_IF_ERROR(avcodec_copy_context(output_streams[i]->codec, input_streams[i]->codec));
+  }
   if (oc->oformat->flags & AVFMT_GLOBALHEADER) {
-    out_video->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
-    out_audio->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+    for (i = 0; i < input_stream_size; i++) {
+      output_streams[i]->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+    }
   }
 
   if (!(oc->oformat->flags & AVFMT_NOFILE)) {
@@ -128,10 +137,10 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
   while ((err = av_read_frame(ic, &packet)) >= 0) {
     const AVStream *in_stream = ic->streams[packet.stream_index];
     AVStream *out_stream = NULL;
-    if (in_stream == in_video) {
-      out_stream = out_video;
-    } else if (in_stream == in_audio) {
-      out_stream = out_audio;
+    for (i = 0; i < input_stream_size; i++) {
+      if (in_stream == input_streams[i]) {
+        out_stream = output_streams[i];
+      }
     }
     if (out_stream != NULL) {
       packet.stream_index = out_stream->index;
@@ -157,6 +166,7 @@ fail:
     avio_close(oc->pb);
   }
   avformat_free_context(oc);
+  av_free(output_streams);
   return err;
 }
 
