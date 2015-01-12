@@ -174,13 +174,13 @@ fail:
 static const int HD = 0x01, SD = 0x02;
 static const int FULL_HD_WIDTH = 1920, HD_WIDTH = 1440, SD_WIDTH = 720;
 
-static int detect_hd_sd(const char *infile, int64_t npackets)
+static void detect_hd_sd(const char *infile, int64_t npackets, int *hd_or_sd)
 {
   AVFormatContext *ic = NULL;
   int err = 0;
-  int ret = 0;
   unsigned i;
 
+  *hd_or_sd = 0;
   FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
   avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
   FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
@@ -190,16 +190,15 @@ static int detect_hd_sd(const char *infile, int64_t npackets)
     if (cc->codec_type == AVMEDIA_TYPE_VIDEO
         && cc->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
       if (cc->width == HD_WIDTH || cc->width == FULL_HD_WIDTH) {
-        ret |= HD;
+        *hd_or_sd |= HD;
       } else if (cc->width == SD_WIDTH) {
-        ret |= SD;
+        *hd_or_sd |= SD;
       }
     }
   }
 
 fail:
   avformat_close_input(&ic);
-  return ret;
 }
 
 static int has_stray_audio(const char *infile, int64_t npackets)
@@ -251,13 +250,14 @@ static int higher_p(const char *infile, int64_t npackets, int higher_is_hd)
     fprintf(stderr, "%s: Stray audio is found at %"PRId64"*188\n", infile, npackets);
     return 1;
   } else {
-    const int r = detect_hd_sd(infile, npackets);
-    if ((r & HD) && (r & SD)) {
+    int hd_or_sd;
+    detect_hd_sd(infile, npackets, &hd_or_sd);
+    if ((hd_or_sd & HD) && (hd_or_sd & SD)) {
       // If both are found, proper cutpoint is higher.
       return 1;
-    } else if (r & HD) {
+    } else if (hd_or_sd & HD) {
       return !higher_is_hd;
-    } else if (r & SD) {
+    } else if (hd_or_sd & SD) {
       return higher_is_hd;
     } else {
       fprintf(stderr, "%s: Neither HD nor SD at %"PRId64"\n", infile, npackets);
@@ -293,8 +293,13 @@ int main(int argc, char *argv[])
   av_log_set_level(AV_LOG_FATAL);
 
   static const int MAX_PACKETS = 200000;
-  const int begin_hd = detect_hd_sd(infile, 0) & HD, end_hd = detect_hd_sd(infile, MAX_PACKETS) & HD;
+  int begin_hd_or_sd, end_hd_or_sd;
+  detect_hd_sd(infile, 0, &begin_hd_or_sd);
+  detect_hd_sd(infile, MAX_PACKETS, &end_hd_or_sd);
+  const int begin_hd = begin_hd_or_sd & HD;
+  const int end_hd = end_hd_or_sd & HD;
   int err;
+  DPRINTF("begin_hd_or_sd:%d end_hd_or_sd:%d\n", begin_hd_or_sd, end_hd_or_sd);
   if (begin_hd) {
     if (end_hd) {
       err = clean_ts(infile, outfile, 0);
