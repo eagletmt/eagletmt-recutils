@@ -35,7 +35,7 @@ static const int TS_PACKET_SIZE = 188;
 #ifdef CLEAN_TS_DEBUG
 # define DPRINTF(fmt, ...) fprintf(stderr, fmt, ## __VA_ARGS__)
 #else
-# define DPRINTF
+# define DPRINTF(fmt, ...)
 #endif
 
 static int find_main_streams(const AVFormatContext *ic, AVStream **in_audio, AVStream **in_video)
