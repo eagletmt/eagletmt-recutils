@@ -9,7 +9,5 @@ while [ ! -r stop.txt ]
 do
   FNAME="$(redis-cli -h $REDIS_HOST -n $DB --raw BLPOP $QUEUE $TIMEOUT | tail -1)"
   echo "$FNAME"
-  pushd "$PT_DIR"
-  ./enc.rb "$FNAME".ts
-  popd
+  ./enc.rb "$PT_DIR/$FNAME".ts
 done
