@@ -1,4 +1,5 @@
 #!/bin/sh
+REDIS_HOST=localhost
 DB=1
 QUEUE=jobs
 TIMEOUT=0 # never
@@ -6,7 +7,7 @@ PT_DIR=/home/pt
 
 while [ ! -r stop.txt ]
 do
-  FNAME="$(redis-cli -n $DB --raw BLPOP $QUEUE $TIMEOUT | tail -1)"
+  FNAME="$(redis-cli -h $REDIS_HOST -n $DB --raw BLPOP $QUEUE $TIMEOUT | tail -1)"
   echo "$FNAME"
   pushd "$PT_DIR"
   ./enc.rb "$FNAME".ts
