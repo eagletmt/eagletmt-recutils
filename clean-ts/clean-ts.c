@@ -68,7 +68,7 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **input_streams
               stream->index,
               stream->id,
               stream->duration);
-          if (stream->duration > 0LL) {
+          if (stream->duration > 0LL || stream->duration == AV_NOPTS_VALUE) {
             if (num_found >= input_stream_size) {
               fprintf(stderr, "Too many streams found: %zu\n", num_found);
               return AVERROR_STREAM_NOT_FOUND;
