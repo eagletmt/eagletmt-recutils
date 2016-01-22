@@ -136,6 +136,7 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets,
 
   FAIL_IF_ERROR(avformat_write_header(oc, NULL));
   AVPacket packet;
+  int error_count = 0;
   while ((err = av_read_frame(ic, &packet)) >= 0) {
     const AVStream *in_stream = ic->streams[packet.stream_index];
     AVStream *out_stream = NULL;
@@ -153,10 +154,13 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets,
       err = av_interleaved_write_frame(oc, &packet);
       if (err < 0) {
         fprintf(stderr, "av_interleaved_write_frame(): %s (at %"PRId64")\n", av_err2str(err), avio_tell(ic->pb));
-        goto fail;
+        ++error_count;
       }
     }
     av_free_packet(&packet);
+    if (error_count >= 10) {
+      goto fail;
+    }
   }
   if (err != AVERROR_EOF) {
     goto fail;
