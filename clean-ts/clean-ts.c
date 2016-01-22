@@ -24,6 +24,7 @@
  */
 
 #include <stdio.h>
+#include <getopt.h>
 #include <libavcodec/avcodec.h>
 #include <libavformat/avformat.h>
 #include <libavutil/avutil.h>
@@ -97,8 +98,8 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **input_streams
   }
 }
 
-static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
-{
+static int clean_ts(const char *infile, const char *outfile, int64_t npackets,
+                    int log_level) {
   AVFormatContext *ic = NULL, *oc = NULL;
   int err = 0;
   AVStream **output_streams = NULL;
@@ -107,7 +108,7 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
   avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
   FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
 
-  av_log_set_level(AV_LOG_ERROR);
+  av_log_set_level(log_level);
 
   AVStream *input_streams[8] = { NULL };
   size_t input_stream_size;
@@ -151,7 +152,8 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets)
       packet.pos = -1;
       err = av_interleaved_write_frame(oc, &packet);
       if (err < 0) {
-        fprintf(stderr, "av_interleaved_write_frame(): Ignore error %s (at %"PRId64")\n", av_err2str(err), avio_tell(ic->pb));
+        fprintf(stderr, "av_interleaved_write_frame(): %s (at %"PRId64")\n", av_err2str(err), avio_tell(ic->pb));
+        goto fail;
       }
     }
     av_free_packet(&packet);
@@ -303,11 +305,25 @@ static int64_t find_cutpoint(const char *infile, int64_t lo, int64_t hi, int hig
 
 int main(int argc, char *argv[])
 {
-  if (argc != 3) {
-    fprintf(stderr, "Usage: %s input.ts output.ts\n", argv[0]);
+  static const struct option long_options[] = {
+    { "retry", no_argument, 0, 0 },
+    { 0, 0, 0, 0 },
+  };
+  int option_index = 0;
+  int enable_retry = 0;
+  while (getopt_long(argc, argv, "", long_options, &option_index) == 0) {
+    switch (option_index) {
+      case 0:
+        enable_retry = 1;
+        break;
+    }
+  }
+  if (optind + 2 != argc) {
+    fprintf(stderr, "Usage: %s [--retry] input.ts output.ts\n", argv[0]);
     return 1;
   }
-  const char *infile = argv[1], *outfile = argv[2];
+
+  const char *infile = argv[optind], *outfile = argv[optind+1];
   av_register_all();
   av_log_set_level(AV_LOG_FATAL);
 
@@ -348,7 +364,28 @@ int main(int argc, char *argv[])
   if (npackets < 0) {
     err = npackets;
   } else {
-    err = clean_ts(infile, outfile, npackets);
+    err = clean_ts(infile, outfile, npackets, AV_LOG_ERROR);
+    if (err == -EINVAL && enable_retry) {
+      DPRINTF("Retry clean_ts by binary search\n");
+      int lo = npackets, hi = MAX_PACKETS;
+      while (lo < hi) {
+        const int mid = (lo + hi) / 2;
+        DPRINTF("  Try npackets=%d\n", mid);
+        err = clean_ts(infile, outfile, mid, AV_LOG_FATAL);
+        if (err == -EINVAL) {
+          DPRINTF("    Failed\n");
+          lo = mid+1;
+        } else if (err == 0) {
+          DPRINTF("    Succeeded\n");
+          hi = mid;
+        } else {
+          DPRINTF("    Error\n");
+          break;
+        }
+      }
+      DPRINTF("Determined %d\n", lo);
+      err = clean_ts(infile, outfile, lo, AV_LOG_ERROR);
+    }
   }
 
   if (err < 0) {
