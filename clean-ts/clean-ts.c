@@ -157,7 +157,7 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets,
         ++error_count;
       }
     }
-    av_free_packet(&packet);
+    av_packet_unref(&packet);
     if (error_count >= 10) {
       goto fail;
     }
