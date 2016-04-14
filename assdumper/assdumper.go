@@ -6,7 +6,7 @@ import "io"
 import "os"
 import "time"
 import "unicode/utf8"
-import "code.google.com/p/go.text/encoding/japanese"
+import "golang.org/x/text/encoding/japanese"
 
 /*
 [B10]: ARIB-STD B10
