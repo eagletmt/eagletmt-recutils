@@ -129,13 +129,9 @@ class caption_parser {
   uint16_t pid_;
   uint8_t continuity_counter_;
   std::vector<uint8_t> payload_;
-  arib_instance_t *arib_;
 
 public:
-  caption_parser(uint16_t pid)
-      : pid_(pid), continuity_counter_(0xff), arib_(arib_instance_new(this)) {}
-  caption_parser(const caption_parser &) = delete;
-  ~caption_parser() { arib_instance_destroy(arib_); }
+  caption_parser(uint16_t pid) : pid_(pid), continuity_counter_(0xff) {}
 
   std::string parse_packet(uint8_t *packet) {
     const bool payload_unit_start_indicator = (packet[1] & 0x40) != 0;
@@ -198,8 +194,10 @@ public:
   }
 
   std::string parse_pes_data(uint8_t *pes_data, size_t size) {
-    arib_parser_t *parser = arib_get_parser(arib_);
-    arib_decoder_t *decoder = arib_get_decoder(arib_);
+    std::unique_ptr<arib_instance_t, decltype(&arib_instance_destroy)> arib(
+        arib_instance_new(nullptr), &arib_instance_destroy);
+    arib_parser_t *parser = arib_get_parser(arib.get());
+    arib_decoder_t *decoder = arib_get_decoder(arib.get());
 
     arib_parse_pes(parser, pes_data, size);
     size_t data_size = 0;
@@ -340,7 +338,7 @@ int main(int argc, char *argv[]) {
       std::cerr << "sync_byte failed" << std::endl;
       continue;
     }
-    uint16_t pid = (uint16_t(buf[1] & 0x1f) << 8) | buf[2];
+    const uint16_t pid = (uint16_t(buf[1] & 0x1f) << 8) | buf[2];
     switch (pid) {
     case 0x0000:
       ass_dumper.push_pat_packet(buf);
