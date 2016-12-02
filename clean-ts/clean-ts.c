@@ -59,7 +59,7 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **input_streams
     }
     for (j = 0; j < program->nb_stream_indexes; j++) {
       AVStream *stream = ic->streams[program->stream_index[j]];
-      const enum AVMediaType media_type = stream->codec->codec_type;
+      const enum AVMediaType media_type = stream->codecpar->codec_type;
       switch (media_type) {
         case AVMEDIA_TYPE_AUDIO:
         case AVMEDIA_TYPE_VIDEO:
@@ -119,14 +119,18 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets,
   output_streams = av_mallocz_array(input_stream_size, sizeof(*output_streams));
   size_t i;
   for (i = 0; i < input_stream_size; i++) {
-    output_streams[i] = avformat_new_stream(oc, input_streams[i]->codec->codec);
-    DPRINTF("%d: Copy from [0x%x]\n", output_streams[i]->index, input_streams[i]->id);
-    FAIL_IF_ERROR(avcodec_copy_context(output_streams[i]->codec, input_streams[i]->codec));
+    const AVCodec *codec = avcodec_find_encoder(input_streams[i]->codecpar->codec_id);
+    output_streams[i] = avformat_new_stream(oc, codec);
+    DPRINTF("%d: Copy from [0x%x]\n", output_streams[i]->index, input_streams[i]->index);
+    output_streams[i]->codecpar = input_streams[i]->codecpar;
     output_streams[i]->time_base = input_streams[i]->time_base;
   }
-  if (oc->oformat->flags & AVFMT_GLOBALHEADER) {
-    for (i = 0; i < input_stream_size; i++) {
-      output_streams[i]->codec->flags |= CODEC_FLAG_GLOBAL_HEADER;
+
+  for (i = 0; i < input_stream_size; i++) {
+    if (oc->oformat->flags & AVFMT_GLOBALHEADER) {
+      output_streams[i]->codecpar->extradata_size = CODEC_FLAG_GLOBAL_HEADER;
+    } else {
+      output_streams[i]->codecpar->extradata_size = 0;
     }
   }
 
@@ -172,7 +176,6 @@ fail:
   if (oc != NULL && oc->pb != NULL) {
     avio_close(oc->pb);
   }
-  avformat_free_context(oc);
   av_free(output_streams);
   return err;
 }
@@ -193,19 +196,19 @@ static void detect_stream_status(const char *infile, int64_t npackets, int *hd_o
   FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
 
   for (i = 0; i < ic->nb_streams; i++) {
-    const AVCodecContext *cc = ic->streams[i]->codec;
-    switch (cc->codec_type) {
+    const AVCodecParameters *params = ic->streams[i]->codecpar;
+    switch (params->codec_type) {
       case AVMEDIA_TYPE_VIDEO:
-        if (cc->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-          if (cc->width == HD_WIDTH || cc->width == FULL_HD_WIDTH) {
+        if (params->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
+          if (params->width == HD_WIDTH || params->width == FULL_HD_WIDTH) {
             *hd_or_sd |= HD;
-          } else if (cc->width == SD_WIDTH) {
+          } else if (params->width == SD_WIDTH) {
             *hd_or_sd |= SD;
           }
         }
         break;
       case AVMEDIA_TYPE_AUDIO:
-        if (cc->sample_fmt == AV_SAMPLE_FMT_NONE || cc->sample_rate == 0) {
+        if (params->format == AV_SAMPLE_FMT_NONE || params->sample_rate == 0) {
           *valid_sample_fmt = 0;
         } else {
           if (*valid_sample_fmt == -1) {
@@ -253,7 +256,7 @@ static int has_stray_audio(const char *infile, int64_t npackets)
   }
 
   for (i = 0; i < ic->nb_streams; i++) {
-    if (!found_streams[i] && ic->streams[i]->codec->codec_type == AVMEDIA_TYPE_AUDIO) {
+    if (!found_streams[i] && ic->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
       ret = 1;
       break;
     }
