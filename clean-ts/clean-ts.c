@@ -122,16 +122,9 @@ static int clean_ts(const char *infile, const char *outfile, int64_t npackets,
     const AVCodec *codec = avcodec_find_encoder(input_streams[i]->codecpar->codec_id);
     output_streams[i] = avformat_new_stream(oc, codec);
     DPRINTF("%d: Copy from [0x%x]\n", output_streams[i]->index, input_streams[i]->index);
-    output_streams[i]->codecpar = input_streams[i]->codecpar;
+    FAIL_IF_ERROR(avcodec_parameters_copy(output_streams[i]->codecpar,
+                                          input_streams[i]->codecpar));
     output_streams[i]->time_base = input_streams[i]->time_base;
-  }
-
-  for (i = 0; i < input_stream_size; i++) {
-    if (oc->oformat->flags & AVFMT_GLOBALHEADER) {
-      output_streams[i]->codecpar->extradata_size = CODEC_FLAG_GLOBAL_HEADER;
-    } else {
-      output_streams[i]->codecpar->extradata_size = 0;
-    }
   }
 
   if (!(oc->oformat->flags & AVFMT_NOFILE)) {
@@ -176,6 +169,7 @@ fail:
   if (oc != NULL && oc->pb != NULL) {
     avio_close(oc->pb);
   }
+  avformat_free_context(oc);
   av_free(output_streams);
   return err;
 }
