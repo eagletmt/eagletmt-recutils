@@ -39,7 +39,7 @@ def verify_audio_and_video!(mp4_path)
   true
 end
 
-AUDIO_OPTS = %w[-strict experimental -acodec aac -ac 2 -ar 48000 -ab 128k]
+AUDIO_OPTS = %w[-acodec aac -ac 2 -ar 48000 -ab 128k]
 VIDEO_OPTS = %w[-vcodec libx264 -aspect 16:9 -filter:v yadif -s 1280x720 -crf 21 -b_strategy 2 -me_method umh -refs 8 -subq 7 -trellis 2 -deblock 1:1]
 MUX_OPTS = %w[-f mp4]
 
