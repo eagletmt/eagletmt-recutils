@@ -1,12 +1,16 @@
 package main
 
-import "bufio"
-import "fmt"
-import "io"
-import "os"
-import "time"
-import "unicode/utf8"
-import "golang.org/x/text/encoding/japanese"
+import (
+	"bufio"
+	"crypto/md5"
+	"encoding/hex"
+	"fmt"
+	"golang.org/x/text/encoding/japanese"
+	"io"
+	"os"
+	"time"
+	"unicode/utf8"
+)
 
 /*
 [B10]: ARIB-STD B10
@@ -63,6 +67,14 @@ func main() {
 
 		analyzePacket(buf, state)
 	}
+}
+
+func debugMode() bool {
+	return os.Getenv("ASSDUMPER_DEBUG") == "1"
+}
+
+func isDRCSEnabled() bool {
+	return os.Getenv("ASSDUMPER_DRCS") == "1"
 }
 
 func assertSyncByte(packet []byte) {
@@ -282,7 +294,58 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 		q := p[index:]
 		data_unit_parameter := q[4]
 		data_unit_size := (int(q[5]) << 16) | (int(q[6]) << 8) | int(q[7])
-		if data_unit_parameter == 0x20 {
+		data := q[8:]
+		subtitle := ""
+		subtitleFound := false
+		switch data_unit_parameter {
+		case 0x20:
+			subtitleFound = true
+			subtitle = decodeString(data, data_unit_size)
+		case 0x30:
+			subtitleFound = true
+			// DRCS
+			// ARIB STD-B24 第一編 第2部 付録規定D
+			numberOfCode := int(data[0])
+			data = data[1:]
+			for i := 0; i < numberOfCode; i++ {
+				// characterCode := uint16(data[0])<<8 | uint16(data[1])
+				numberOfFont := int(data[2])
+				data = data[3:]
+				for j := 0; j < numberOfFont; j++ {
+					// fontId := data[0] >> 4
+					mode := data[0] & 0x0f
+					if mode == 0x00 || mode == 0x01 {
+						// depth := data[1]
+						width := int(data[2])
+						height := int(data[3])
+						pat := ""
+						for h := 0; h < height; h++ {
+							for w := 0; w < width/8; w++ {
+								pat += fmt.Sprintf("%08b", data[4+h*(width/8)+w])
+							}
+							pat += "\n"
+						}
+						s, md5sum := replaceDRCS(pat)
+						if s != "" {
+							if isDRCSEnabled() {
+								subtitle = s
+							}
+						} else if debugMode() {
+							fmt.Fprintf(os.Stderr, "Unable to replace DRCS bitmap %s\n", md5sum)
+							fmt.Fprint(os.Stderr, pat)
+						}
+					} else {
+						if debugMode() {
+							fmt.Fprintf(os.Stderr, "Compressed mode isn't supported (mode=%d)\n", mode)
+						}
+					}
+				}
+			}
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown data_unit_parameter: 0x%02x\n", data_unit_parameter)
+		}
+
+		if subtitleFound {
 			if len(state.previousSubtitle) != 0 && !(isBlank(state.previousSubtitle) && state.previousIsBlank) {
 				prevTimeCenti := state.previousTimestamp.centitime() + state.clockOffset
 				curTimeCenti := state.currentTimestamp.centitime() + state.clockOffset
@@ -302,7 +365,7 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 					state.previousSubtitle)
 			}
 			state.previousIsBlank = isBlank(state.previousSubtitle)
-			state.previousSubtitle = decodeString(q[8:], data_unit_size)
+			state.previousSubtitle = subtitle
 			state.previousTimestamp = state.currentTimestamp
 		}
 		index += 5 + data_unit_size
@@ -351,7 +414,9 @@ func decodeString(bytes []byte, length int) string {
 				fmt.Fprintf(os.Stderr, "Unhandled C0 code: 0x%02x\n", b)
 			}
 		} else if 0x20 < b && b < 0x80 {
-			// fmt.Fprintf(os.Stderr, "Unhandled GL code: 0x%02x\n", b)
+			if debugMode() {
+				fmt.Fprintf(os.Stderr, "Unhandled GL code: 0x%02x\n", b)
+			}
 		} else if 0x80 <= b && b < 0xA0 {
 			// ARIB STD-B24 第一編 第2部 表 7-14
 			// ARIB STD-B24 第一編 第2部 表 7-16
@@ -429,6 +494,24 @@ func decodeString(bytes []byte, length int) string {
 		}
 	}
 	return decoded
+}
+
+func replaceDRCS(pattern string) (string, string) {
+	h := md5.New()
+	io.WriteString(h, pattern)
+	md5sum := hex.EncodeToString(h.Sum(nil))
+	switch md5sum {
+	case "4447af4c020758d6b615713ad6640fc5":
+		return "《", md5sum
+	case "6d6cf86c3f892dc45b68703bb84068a9":
+		return "》", md5sum
+	case "6bcc3c66dc1f853e605613fceda9e648":
+		return "♬", md5sum
+	case "f64c27d6df14074b2e1f92b3a4985c01":
+		return "➡", md5sum
+	default:
+		return "", md5sum
+	}
 }
 
 func tryGaiji(c int) string {
