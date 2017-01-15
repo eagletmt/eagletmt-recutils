@@ -334,31 +334,24 @@ func decodeString(bytes []byte, length int) string {
 
 	for i := 0; i < length; i++ {
 		b := bytes[i]
-		if 0xa0 < b && b < 0xff {
-			eucjp := make([]byte, 3)
-			eucjp[0] = bytes[i]
-			eucjp[1] = bytes[i+1]
-			eucjp[2] = 0
-			buf := make([]byte, 10)
-			ndst, nsrc, err := eucjpDecoder.Transform(buf, eucjp, true)
-			if err == nil {
-				if nsrc == 3 {
-					c, _ := utf8.DecodeRune(buf)
-					if c == 0xfffd {
-						gaiji := (int(eucjp[0]&0x7f) << 8) | int(eucjp[1]&0x7f)
-						if gaiji != 0x7c21 {
-							decoded += tryGaiji(gaiji)
-						}
-					} else {
-						decoded += string(buf[:ndst-1])
-					}
-				} else {
-					fmt.Fprintf(os.Stderr, "eucjp decode failed: ndst=%d, nsrc=%d\n", ndst, nsrc)
-				}
-			} else {
-				fmt.Fprintf(os.Stderr, "eucjp decode error: %v\n", err)
+		if 0 <= b && b <= 0x20 {
+			// ARIB STD-B24 第一編 第2部 表 7-14
+			// ARIB STD-B24 第一編 第2部 表 7-15
+			// C0 制御集合
+			switch b {
+			case 0x0c:
+				// CS
+			case 0x0d:
+				// APR
+				decoded += "\\n"
+			case 0x20:
+				// SP
+				decoded += " "
+			default:
+				fmt.Fprintf(os.Stderr, "Unhandled C0 code: 0x%02x\n", b)
 			}
-			i++
+		} else if 0x20 < b && b < 0x80 {
+			// fmt.Fprintf(os.Stderr, "Unhandled GL code: 0x%02x\n", b)
 		} else if 0x80 <= b && b < 0xA0 {
 			// ARIB STD-B24 第一編 第2部 表 7-14
 			// ARIB STD-B24 第一編 第2部 表 7-16
@@ -408,22 +401,31 @@ func decodeString(bytes []byte, length int) string {
 			default:
 				fmt.Fprintf(os.Stderr, "Unhandled C1 code: 0x%02x\n", b)
 			}
-		} else if 0 <= b && b <= 0x20 {
-			// ARIB STD-B24 第一編 第2部 表 7-14
-			// ARIB STD-B24 第一編 第2部 表 7-15
-			// C0 制御集合
-			switch b {
-			case 0x0c:
-				// CS
-			case 0x0d:
-				// APR
-				decoded += "\\n"
-			case 0x20:
-				// SP
-				decoded += " "
-			default:
-				fmt.Fprintf(os.Stderr, "Unhandled C0 code: 0x%02x\n", b)
+		} else if 0xa0 < b && b <= 0xff {
+			eucjp := make([]byte, 3)
+			eucjp[0] = bytes[i]
+			eucjp[1] = bytes[i+1]
+			eucjp[2] = 0
+			buf := make([]byte, 10)
+			ndst, nsrc, err := eucjpDecoder.Transform(buf, eucjp, true)
+			if err == nil {
+				if nsrc == 3 {
+					c, _ := utf8.DecodeRune(buf)
+					if c == 0xfffd {
+						gaiji := (int(eucjp[0]&0x7f) << 8) | int(eucjp[1]&0x7f)
+						if gaiji != 0x7c21 {
+							decoded += tryGaiji(gaiji)
+						}
+					} else {
+						decoded += string(buf[:ndst-1])
+					}
+				} else {
+					fmt.Fprintf(os.Stderr, "eucjp decode failed: ndst=%d, nsrc=%d\n", ndst, nsrc)
+				}
+			} else {
+				fmt.Fprintf(os.Stderr, "eucjp decode error: %v\n", err)
 			}
+			i++
 		}
 	}
 	return decoded
