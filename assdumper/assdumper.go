@@ -7,6 +7,7 @@ import "os"
 import "time"
 import "unicode/utf8"
 import "golang.org/x/text/encoding/japanese"
+import "strings"
 
 /*
 [B10]: ARIB-STD B10
@@ -282,6 +283,7 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 		q := p[index:]
 		data_unit_parameter := q[4]
 		data_unit_size := (int(q[5]) << 16) | (int(q[6]) << 8) | int(q[7])
+		data := q[8:]
 		if data_unit_parameter == 0x20 {
 			if len(state.previousSubtitle) != 0 && !(isBlank(state.previousSubtitle) && state.previousIsBlank) {
 				prevTimeCenti := state.previousTimestamp.centitime() + state.clockOffset
@@ -302,8 +304,35 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 					state.previousSubtitle)
 			}
 			state.previousIsBlank = isBlank(state.previousSubtitle)
-			state.previousSubtitle = decodeString(q[8:], data_unit_size)
+			state.previousSubtitle = decodeString(data, data_unit_size)
 			state.previousTimestamp = state.currentTimestamp
+		} else if data_unit_parameter == 0x30 {
+			// DRCS
+			// ARIB STD-B24 第一編 第2部 付録規定D
+			numberOfCode := int(data[0])
+			data = data[1:]
+			for i := 0; i < numberOfCode; i++ {
+				// characterCode := uint16(data[0])<<8 | uint16(data[1])
+				numberOfFont := int(data[2])
+				data = data[3:]
+				for j := 0; j < numberOfFont; j++ {
+					// fontId := data[0] >> 4
+					mode := data[0] & 0x0f
+					if mode == 0x00 || mode == 0x01 {
+						// depth := data[1]
+						width := int(data[2])
+						height := int(data[3])
+						pat := ""
+						for h := 0; h < height; h++ {
+							for w := 0; w < width/8; w++ {
+								pat += strings.Replace(strings.Replace(fmt.Sprintf("%08b", data[4+h*(width/8)+w]), "0", " ", -1), "1", "x", -1)
+							}
+							pat += "\n"
+						}
+						fmt.Print(pat)
+					}
+				}
+			}
 		}
 		index += 5 + data_unit_size
 	}
