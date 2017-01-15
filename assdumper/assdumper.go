@@ -344,31 +344,36 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 		default:
 			fmt.Fprintf(os.Stderr, "Unknown data_unit_parameter: 0x%02x\n", data_unit_parameter)
 		}
+		index += 5 + data_unit_size
 
 		if subtitleFound {
 			if len(state.previousSubtitle) != 0 && !(isBlank(state.previousSubtitle) && state.previousIsBlank) {
-				prevTimeCenti := state.previousTimestamp.centitime() + state.clockOffset
-				curTimeCenti := state.currentTimestamp.centitime() + state.clockOffset
-				prevTime := prevTimeCenti / 100
-				curTime := curTimeCenti / 100
-				prevCenti := prevTimeCenti % 100
-				curCenti := curTimeCenti % 100
-				prev := time.Unix(prevTime, 0)
-				cur := time.Unix(curTime, 0)
-				if !state.preludePrinted {
-					printPrelude()
-					state.preludePrinted = true
+				if state.previousTimestamp == state.currentTimestamp {
+					state.previousSubtitle += subtitle
+					continue
+				} else {
+					prevTimeCenti := state.previousTimestamp.centitime() + state.clockOffset
+					curTimeCenti := state.currentTimestamp.centitime() + state.clockOffset
+					prevTime := prevTimeCenti / 100
+					curTime := curTimeCenti / 100
+					prevCenti := prevTimeCenti % 100
+					curCenti := curTimeCenti % 100
+					prev := time.Unix(prevTime, 0)
+					cur := time.Unix(curTime, 0)
+					if !state.preludePrinted {
+						printPrelude()
+						state.preludePrinted = true
+					}
+					fmt.Printf("Dialogue: 0,%02d:%02d:%02d.%02d,%02d:%02d:%02d.%02d,Default,,,,,,%s\n",
+						prev.Hour(), prev.Minute(), prev.Second(), prevCenti,
+						cur.Hour(), cur.Minute(), cur.Second(), curCenti,
+						state.previousSubtitle)
 				}
-				fmt.Printf("Dialogue: 0,%02d:%02d:%02d.%02d,%02d:%02d:%02d.%02d,Default,,,,,,%s\n",
-					prev.Hour(), prev.Minute(), prev.Second(), prevCenti,
-					cur.Hour(), cur.Minute(), cur.Second(), curCenti,
-					state.previousSubtitle)
 			}
 			state.previousIsBlank = isBlank(state.previousSubtitle)
 			state.previousSubtitle = subtitle
 			state.previousTimestamp = state.currentTimestamp
 		}
-		index += 5 + data_unit_size
 	}
 }
 
