@@ -330,7 +330,7 @@ func printPrelude() {
 func decodeString(bytes []byte, length int) string {
 	eucjpDecoder := japanese.EUCJP.NewDecoder()
 	decoded := ""
-	bbggrr := ""
+	nonDefaultColor := false
 
 	for i := 0; i < length; i++ {
 		b := bytes[i]
@@ -365,28 +365,38 @@ func decodeString(bytes []byte, length int) string {
 			switch b {
 			case 0x80:
 				// BKF, black
-				bbggrr = "000000"
+				decoded += "{\\c&H000000&}"
+				nonDefaultColor = true
 			case 0x81:
 				// RDF, red
-				bbggrr = "0000ff"
+				decoded += "{\\c&H0000ff&}"
+				nonDefaultColor = true
 			case 0x82:
 				// GRF, green
-				bbggrr = "00ff00"
+				decoded += "{\\c&H00ff00&}"
+				nonDefaultColor = true
 			case 0x83:
 				// YLF, yellow
-				bbggrr = "00ffff"
+				decoded += "{\\c&H00ffff&}"
+				nonDefaultColor = true
 			case 0x84:
 				// BLF, blue
-				bbggrr = "ff0000"
+				decoded += "{\\c&Hff0000&}"
+				nonDefaultColor = true
 			case 0x85:
 				// MGF, magenta
-				bbggrr = "ff00ff"
+				decoded += "{\\c&Hff00ff&}"
+				nonDefaultColor = true
 			case 0x86:
 				// CNF, cyan
-				bbggrr = "ffff00"
+				decoded += "{\\c&Hffff00&}"
+				nonDefaultColor = true
 			case 0x87:
 				// WHF, white
-				bbggrr = "" // default
+				if nonDefaultColor {
+					decoded += "{\\c&HFFFFFF&}"
+					nonDefaultColor = false
+				}
 			case 0x89:
 				// MSZ
 			case 0x8a:
@@ -405,9 +415,6 @@ func decodeString(bytes []byte, length int) string {
 		} else if b == 0x20 {
 			decoded += " "
 		}
-	}
-	if bbggrr != "" {
-		decoded = fmt.Sprintf("{\\c&H%s&}%s", bbggrr, decoded)
 	}
 	return decoded
 }
