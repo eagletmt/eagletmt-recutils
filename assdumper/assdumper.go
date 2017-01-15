@@ -302,7 +302,7 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 					state.previousSubtitle)
 			}
 			state.previousIsBlank = isBlank(state.previousSubtitle)
-			state.previousSubtitle = decodeCprofile(q[8:], data_unit_size)
+			state.previousSubtitle = decodeString(q[8:], data_unit_size)
 			state.previousTimestamp = state.currentTimestamp
 		}
 		index += 5 + data_unit_size
@@ -327,9 +327,10 @@ func printPrelude() {
 	fmt.Println("\n[Events]")
 }
 
-func decodeCprofile(bytes []byte, length int) string {
+func decodeString(bytes []byte, length int) string {
 	eucjpDecoder := japanese.EUCJP.NewDecoder()
 	decoded := ""
+	bbggrr := ""
 
 	for i := 0; i < length; i++ {
 		b := bytes[i]
@@ -358,8 +359,44 @@ func decodeCprofile(bytes []byte, length int) string {
 				fmt.Fprintf(os.Stderr, "eucjp decode error: %v\n", err)
 			}
 			i++
-		} else if 0x80 <= b && b <= 0x87 {
-			// color code. ignore
+		} else if 0x80 <= b && b < 0xA0 {
+			// ARIB STD-B24 第一編 第2部 表 7-14
+			// ARIB STD-B24 第一編 第2部 表 7-16
+			switch b {
+			case 0x80:
+				// BKF, black
+				bbggrr = "000000"
+			case 0x81:
+				// RDF, red
+				bbggrr = "0000ff"
+			case 0x82:
+				// GRF, green
+				bbggrr = "00ff00"
+			case 0x83:
+				// YLF, yellow
+				bbggrr = "00ffff"
+			case 0x84:
+				// BLF, blue
+				bbggrr = "ff0000"
+			case 0x85:
+				// MGF, magenta
+				bbggrr = "ff00ff"
+			case 0x86:
+				// CNF, cyan
+				bbggrr = "ffff00"
+			case 0x87:
+				// WHF, white
+				bbggrr = "" // default
+			case 0x89:
+				// MSZ
+			case 0x8a:
+				// NSZ
+			case 0x9d:
+				// TIME
+				i += 2
+			default:
+				fmt.Fprintf(os.Stderr, "Unhandled C1 code: 0x%02x\n", b)
+			}
 		} else if b == 0x0d {
 			// CR -> LF
 			decoded += "\\n"
@@ -368,6 +405,9 @@ func decodeCprofile(bytes []byte, length int) string {
 		} else if b == 0x20 {
 			decoded += " "
 		}
+	}
+	if bbggrr != "" {
+		decoded = fmt.Sprintf("{\\c&H%s&}%s", bbggrr, decoded)
 	}
 	return decoded
 }
