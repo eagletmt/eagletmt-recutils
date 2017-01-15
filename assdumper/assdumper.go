@@ -476,26 +476,32 @@ func decodeString(bytes []byte, length int) string {
 			eucjp[0] = bytes[i]
 			eucjp[1] = bytes[i+1]
 			eucjp[2] = 0
-			buf := make([]byte, 10)
-			ndst, nsrc, err := eucjpDecoder.Transform(buf, eucjp, true)
-			if err == nil {
-				if nsrc == 3 {
-					c, _ := utf8.DecodeRune(buf)
-					if c == 0xfffd {
-						gaiji := (int(eucjp[0]&0x7f) << 8) | int(eucjp[1]&0x7f)
-						if gaiji != 0x7c21 {
-							decoded += tryGaiji(gaiji)
+			i++
+
+			if eucjp[0] == 0xfc && eucjp[1] == 0xa1 {
+				// FIXME
+				decoded += "➡"
+			} else {
+				buf := make([]byte, 10)
+				ndst, nsrc, err := eucjpDecoder.Transform(buf, eucjp, true)
+				if err == nil {
+					if nsrc == 3 {
+						c, _ := utf8.DecodeRune(buf)
+						if c == 0xfffd {
+							gaiji := (int(eucjp[0]&0x7f) << 8) | int(eucjp[1]&0x7f)
+							if gaiji != 0x7c21 {
+								decoded += tryGaiji(gaiji)
+							}
+						} else {
+							decoded += string(buf[:ndst-1])
 						}
 					} else {
-						decoded += string(buf[:ndst-1])
+						fmt.Fprintf(os.Stderr, "eucjp decode failed: ndst=%d, nsrc=%d\n", ndst, nsrc)
 					}
 				} else {
-					fmt.Fprintf(os.Stderr, "eucjp decode failed: ndst=%d, nsrc=%d\n", ndst, nsrc)
+					fmt.Fprintf(os.Stderr, "eucjp decode error: %v\n", err)
 				}
-			} else {
-				fmt.Fprintf(os.Stderr, "eucjp decode error: %v\n", err)
 			}
-			i++
 		}
 	}
 	return decoded
