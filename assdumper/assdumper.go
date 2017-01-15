@@ -362,6 +362,7 @@ func decodeString(bytes []byte, length int) string {
 		} else if 0x80 <= b && b < 0xA0 {
 			// ARIB STD-B24 第一編 第2部 表 7-14
 			// ARIB STD-B24 第一編 第2部 表 7-16
+			// C1 制御集合
 			switch b {
 			case 0x80:
 				// BKF, black
@@ -407,13 +408,22 @@ func decodeString(bytes []byte, length int) string {
 			default:
 				fmt.Fprintf(os.Stderr, "Unhandled C1 code: 0x%02x\n", b)
 			}
-		} else if b == 0x0d {
-			// CR -> LF
-			decoded += "\\n"
-		} else if b == 0x0c {
-			decoded += " "
-		} else if b == 0x20 {
-			decoded += " "
+		} else if 0 <= b && b <= 0x20 {
+			// ARIB STD-B24 第一編 第2部 表 7-14
+			// ARIB STD-B24 第一編 第2部 表 7-15
+			// C0 制御集合
+			switch b {
+			case 0x0c:
+				// CS
+			case 0x0d:
+				// APR
+				decoded += "\\n"
+			case 0x20:
+				// SP
+				decoded += " "
+			default:
+				fmt.Fprintf(os.Stderr, "Unhandled C0 code: 0x%02x\n", b)
+			}
 		}
 	}
 	return decoded
