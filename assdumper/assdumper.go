@@ -512,6 +512,8 @@ func replaceDRCS(pattern string) (string, string) {
 		return "》", md5sum
 	case "6bcc3c66dc1f853e605613fceda9e648":
 		return "♬", md5sum
+	case "ec5a85c9f822a0e27847a2d8d31ab73e":
+		return "📺", md5sum
 	case "f64c27d6df14074b2e1f92b3a4985c01":
 		return "➡", md5sum
 	default:
