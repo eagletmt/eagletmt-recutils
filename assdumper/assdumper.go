@@ -8,6 +8,7 @@ import (
 	"golang.org/x/text/encoding/japanese"
 	"io"
 	"os"
+	"strings"
 	"time"
 	"unicode/utf8"
 )
@@ -364,10 +365,11 @@ func dumpCaption(payload []byte, state *AnalyzerState) {
 						printPrelude()
 						state.preludePrinted = true
 					}
+					subtitle := strings.Replace(state.previousSubtitle, "\f", "", -1)
 					fmt.Printf("Dialogue: 0,%02d:%02d:%02d.%02d,%02d:%02d:%02d.%02d,Default,,,,,,%s\n",
 						prev.Hour(), prev.Minute(), prev.Second(), prevCenti,
 						cur.Hour(), cur.Minute(), cur.Second(), curCenti,
-						state.previousSubtitle)
+						subtitle)
 				}
 			}
 			state.previousIsBlank = isBlank(state.previousSubtitle)
@@ -409,6 +411,7 @@ func decodeString(bytes []byte, length int) string {
 			switch b {
 			case 0x0c:
 				// CS
+				decoded += "\f"
 			case 0x0d:
 				// APR
 				decoded += "\\n"
