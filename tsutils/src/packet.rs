@@ -26,7 +26,7 @@ pub fn ts_packets<R>(reader: R) -> TsPackets<R> {
 }
 
 #[derive(Debug)]
-pub struct TsPacket {
+pub struct TsPacket<'a> {
     pub sync_byte: u8,
     pub transport_error_indicator: bool,
     pub payload_unit_start_indicator: bool,
@@ -35,12 +35,12 @@ pub struct TsPacket {
     pub transport_scrambling_control: u8,
     pub adaptation_field_control: u8,
     pub continuity_counter: u8,
-    pub adaptation_field: Option<AdaptationField>,
-    pub data_bytes: Option<Vec<u8>>,
+    pub adaptation_field: Option<AdaptationField<'a>>,
+    pub data_bytes: Option<&'a [u8]>,
 }
 
-impl TsPacket {
-    pub fn new(packet: &[u8]) -> Self {
+impl<'a> TsPacket<'a> {
+    pub fn new(packet: &'a [u8]) -> Self {
         // ISO/IEC 13818-1 2.4.3.2 Table 2-2
         // ISO/IEC 13818-1 2.4.3.3
         let sync_byte = packet[0];
@@ -68,7 +68,7 @@ impl TsPacket {
         };
 
         let data_bytes = if adaptation_field_control == 0b01 || adaptation_field_control == 0b11 {
-            Some(packet[index..].to_vec())
+            Some(&packet[index..])
         } else {
             None
         };
@@ -93,7 +93,7 @@ impl TsPacket {
 }
 
 #[derive(Debug)]
-pub struct AdaptationField {
+pub struct AdaptationField<'a> {
     pub adaptation_field_length: u8,
     pub discontinuity_indicator: bool,
     pub random_access_indicator: bool,
@@ -102,12 +102,12 @@ pub struct AdaptationField {
     pub pcr: Option<PCR>,
     pub opcr: Option<OPCR>,
     pub splice_countdown: Option<i8>,
-    pub transport_private_data: Option<Vec<u8>>,
-    pub adaptation_field_extension: Option<AdaptationFieldExtension>,
+    pub transport_private_data: Option<&'a [u8]>,
+    pub adaptation_field_extension: Option<AdaptationFieldExtension<'a>>,
 }
 
-impl AdaptationField {
-    fn parse(packet: &[u8]) -> Option<Self> {
+impl<'a> AdaptationField<'a> {
+    fn parse(packet: &'a [u8]) -> Option<Self> {
         // ISO/IEC 13818-1 2.4.3.4 Table 2-6
         // ISO/IEC 13818-1 2.4.3.5
         let adaptation_field_length = packet[0];
@@ -152,7 +152,7 @@ impl AdaptationField {
             let transport_private_data = if transport_private_data_flag {
                 let length = packet[index] as usize;
                 index += 1;
-                let data = packet[index..(index + length)].to_vec();
+                let data = &packet[index..(index + length)];
                 index += length;
                 Some(data)
             } else {
@@ -243,17 +243,17 @@ impl OPCR {
 }
 
 #[derive(Debug)]
-pub struct AdaptationFieldExtension {
+pub struct AdaptationFieldExtension<'a> {
     pub adaptation_field_extension_length: u8,
     pub reserved: u8,
     pub ltw: Option<LegalTimeWindow>,
     pub piecewise_rate: Option<u32>,
     pub seamless_splice: Option<SeamlessSplice>,
-    pub trailing_reserved: Vec<u8>,
+    pub trailing_reserved: &'a [u8],
 }
 
-impl AdaptationFieldExtension {
-    fn new(packet: &[u8]) -> Self {
+impl<'a> AdaptationFieldExtension<'a> {
+    fn new(packet: &'a [u8]) -> Self {
         let adaptation_field_extension_length = packet[0];
         let ltw_flag = (packet[1] & 0b10000000) != 0;
         let piecewise_rate_flag = (packet[1] & 0b01000000) != 0;
@@ -288,7 +288,7 @@ impl AdaptationFieldExtension {
             None
         };
 
-        let trailing_reserved = packet[index..].to_vec();
+        let trailing_reserved = &packet[index..];
 
         AdaptationFieldExtension {
             adaptation_field_extension_length: adaptation_field_extension_length,

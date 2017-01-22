@@ -108,19 +108,19 @@ fn drop_av<R, W>(reader: R, mut writer: W) -> Result<(), Error>
             }
 
             if let Some(data_bytes) = packet.data_bytes {
-                payloads.insert(packet.pid, data_bytes);
+                payloads.insert(packet.pid, data_bytes.to_vec());
             } else {
                 return Err(Error::from("payload_unit_start_indicator is set, but no \
                                                  data_bytes"));
             }
         } else {
-            if let Some(mut data_bytes) = packet.data_bytes {
+            if let Some(data_bytes) = packet.data_bytes {
                 match payloads.entry(packet.pid) {
                     std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        entry.get_mut().append(&mut data_bytes);
+                        entry.get_mut().extend_from_slice(data_bytes);
                     }
                     std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(data_bytes);
+                        entry.insert(data_bytes.to_vec());
                     }
                 }
             }

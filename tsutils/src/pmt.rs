@@ -1,5 +1,5 @@
 #[derive(Debug)]
-pub struct ProgramMapTable {
+pub struct ProgramMapTable<'a> {
     pub table_id: u8,
     pub program_number: u16,
     pub version_number: u8,
@@ -7,13 +7,13 @@ pub struct ProgramMapTable {
     pub section_number: u8,
     pub last_section_number: u8,
     pub pcr_pid: u16,
-    pub program_info: Vec<u8>,
-    pub es_info: Vec<EsInfo>,
+    pub program_info: &'a [u8],
+    pub es_info: Vec<EsInfo<'a>>,
     pub crc32: u32,
 }
 
-impl ProgramMapTable {
-    pub fn parse(payload: &[u8]) -> Result<Self, super::psi::ParseError> {
+impl<'a> ProgramMapTable<'a> {
+    pub fn parse(payload: &'a [u8]) -> Result<Self, super::psi::ParseError> {
         // ISO/IEC 13818-1 2.4.4.1 Table 2-29
         // ISO/IEC 13818-1 2.4.4.2
         let pointer_field = payload[0] as usize;
@@ -40,7 +40,7 @@ impl ProgramMapTable {
         let last_section_number = payload[7];
         let pcr_pid = ((payload[8] & 0b00011111) as u16) << 8 | payload[9] as u16;
         let program_info_length = ((payload[10] & 0b00001111) as usize) << 8 | payload[11] as usize;
-        let program_info = payload[12..(12 + program_info_length)].to_vec();
+        let program_info = &payload[12..(12 + program_info_length)];
 
         let mut index = 12 + program_info_length;
         let mut es_info = vec![];
@@ -70,18 +70,18 @@ impl ProgramMapTable {
 }
 
 #[derive(Debug)]
-pub struct EsInfo {
+pub struct EsInfo<'a> {
     pub stream_type: u8,
     pub elementary_pid: u16,
-    pub descriptor: Vec<u8>,
+    pub descriptor: &'a [u8],
 }
 
-impl EsInfo {
-    pub fn new(payload: &[u8]) -> Self {
+impl<'a> EsInfo<'a> {
+    pub fn new(payload: &'a [u8]) -> Self {
         let stream_type = payload[0];
         let elementary_pid = ((payload[1] & 0b00011111) as u16) << 8 | payload[2] as u16;
         let es_info_length = ((payload[3] & 0b00001111) as usize) << 8 | payload[4] as usize;
-        let descriptor = payload[5..(5 + es_info_length)].to_vec();
+        let descriptor = &payload[5..(5 + es_info_length)];
         EsInfo {
             stream_type: stream_type,
             elementary_pid: elementary_pid,
