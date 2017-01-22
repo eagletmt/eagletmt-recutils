@@ -1,0 +1,8 @@
+[package]
+name = "tsutils"
+version = "0.0.0"
+authors = ["Kohei Suzuki <eagletmt@gmail.com>"]
+
+[dependencies]
+env_logger = "0.4"
+log = "0.3"
