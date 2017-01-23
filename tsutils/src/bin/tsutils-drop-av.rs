@@ -7,9 +7,16 @@ extern crate log;
 fn main() {
     env_logger::init().unwrap();
 
-    let input = std::io::stdin();
-    let output = std::io::stdout();
-    drop_av(input, output).unwrap();
+    let mut args = std::env::args().skip(1);
+    if let Some(input_path) = args.next() {
+        if let Some(output_path) = args.next() {
+            let input = std::fs::File::open(input_path).unwrap();
+            let output = std::fs::File::create(output_path).unwrap();
+            drop_av(input, output).unwrap();
+            return;
+        }
+    }
+    std::process::exit(1);
 }
 
 #[derive(Debug)]
