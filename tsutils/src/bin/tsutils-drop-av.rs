@@ -70,15 +70,15 @@ fn drop_av<R, W>(reader: R, mut writer: W) -> Result<(), Error>
         }
 
         if packet.payload_unit_start_indicator {
-            if let Some(payload) = payloads.get(&packet.pid) {
+            if let Some(payload) = payloads.remove(&packet.pid) {
                 match packet.pid {
                     0x0000 => {
-                        pat = Some(try!(tsutils::ProgramAssociationTable::parse(payload)));
+                        pat = Some(try!(tsutils::ProgramAssociationTable::parse(&payload)));
                     }
                     _ => {
                         if let Some(ref pat) = pat {
                             if let Some(&program_number) = pat.program_map.get(&packet.pid) {
-                                let pmt = try!(tsutils::ProgramMapTable::parse(payload));
+                                let pmt = try!(tsutils::ProgramMapTable::parse(&payload));
                                 if pmt.program_number != program_number {
                                     return Err(Error::from(format!("Inconsistent \
                                                                     program_number for PID={}: \
@@ -113,24 +113,12 @@ fn drop_av<R, W>(reader: R, mut writer: W) -> Result<(), Error>
                     }
                 }
             }
+        }
 
-            if let Some(data_bytes) = packet.data_bytes {
-                payloads.insert(packet.pid, data_bytes.to_vec());
-            } else {
-                return Err(Error::from("payload_unit_start_indicator is set, but no \
-                                                 data_bytes"));
-            }
-        } else {
-            if let Some(data_bytes) = packet.data_bytes {
-                match payloads.entry(packet.pid) {
-                    std::collections::hash_map::Entry::Occupied(mut entry) => {
-                        entry.get_mut().extend_from_slice(data_bytes);
-                    }
-                    std::collections::hash_map::Entry::Vacant(entry) => {
-                        entry.insert(data_bytes.to_vec());
-                    }
-                }
-            }
+        if let Some(data_bytes) = packet.data_bytes {
+            payloads.entry(packet.pid)
+                .or_insert(Vec::new())
+                .extend_from_slice(data_bytes);
         }
 
         if !av_pids.contains(&packet.pid) {
