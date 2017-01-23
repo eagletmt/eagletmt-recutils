@@ -2,15 +2,15 @@ extern crate std;
 
 pub struct TsPackets<R> {
     reader: R,
+    buf: [u8; 188],
 }
 
 impl<R: std::io::Read> Iterator for TsPackets<R> {
     type Item = Result<[u8; 188], std::io::Error>;
 
     fn next(&mut self) -> Option<Result<[u8; 188], std::io::Error>> {
-        let mut buf = [0; 188];
-        match self.reader.read_exact(&mut buf) {
-            Ok(()) => Some(Ok(buf)),
+        match self.reader.read_exact(&mut self.buf) {
+            Ok(()) => Some(Ok(self.buf)),
             Err(e) => {
                 match e.kind() {
                     std::io::ErrorKind::UnexpectedEof => None,
@@ -22,7 +22,10 @@ impl<R: std::io::Read> Iterator for TsPackets<R> {
 }
 
 pub fn ts_packets<R>(reader: R) -> TsPackets<R> {
-    TsPackets { reader: reader }
+    TsPackets {
+        reader: reader,
+        buf: [0; 188],
+    }
 }
 
 #[derive(Debug)]
