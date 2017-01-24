@@ -58,6 +58,8 @@ fn drop_av<R, W>(reader: R, mut writer: W) -> Result<(), Error>
     let mut payloads: std::collections::HashMap<u16, Vec<u8>> = std::collections::HashMap::new();
     let mut av_pids = std::collections::HashSet::new();
     let mut nonav_pids = std::collections::HashSet::new();
+    let mut tracking_pids = std::collections::HashSet::new();
+    tracking_pids.insert(0);
 
     for buf in tsutils::packet::ts_packets(reader) {
         let buf = try!(buf);
@@ -73,7 +75,9 @@ fn drop_av<R, W>(reader: R, mut writer: W) -> Result<(), Error>
             if let Some(payload) = payloads.remove(&packet.pid) {
                 match packet.pid {
                     0x0000 => {
-                        pat = Some(try!(tsutils::ProgramAssociationTable::parse(&payload)));
+                        let t = try!(tsutils::ProgramAssociationTable::parse(&payload));
+                        tracking_pids.extend(t.program_map.keys());
+                        pat = Some(t);
                     }
                     _ => {
                         if let Some(ref pat) = pat {
@@ -115,10 +119,12 @@ fn drop_av<R, W>(reader: R, mut writer: W) -> Result<(), Error>
             }
         }
 
-        if let Some(data_bytes) = packet.data_bytes {
-            payloads.entry(packet.pid)
-                .or_insert(Vec::new())
-                .extend_from_slice(data_bytes);
+        if tracking_pids.contains(&packet.pid) {
+            if let Some(data_bytes) = packet.data_bytes {
+                payloads.entry(packet.pid)
+                    .or_insert(Vec::new())
+                    .extend_from_slice(data_bytes);
+            }
         }
 
         if !av_pids.contains(&packet.pid) {
