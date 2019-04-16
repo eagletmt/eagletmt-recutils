@@ -304,6 +304,63 @@ static int64_t find_cutpoint(const char *infile, int64_t lo, int64_t hi, int hig
   return lo;
 }
 
+static unsigned count_audio_streams(const char *infile, int64_t npackets) {
+  AVFormatContext *ic = NULL;
+  int err = 0;
+  unsigned i, audio_count = 0;
+
+  FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
+  avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
+  FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
+
+  for (i = 0; i < ic->nb_streams; i++) {
+    const AVStream *stream = ic->streams[i];
+    const AVCodecParameters *params = stream->codecpar;
+    switch (params->codec_type) {
+      case AVMEDIA_TYPE_AUDIO:
+        if ((stream->duration > 0LL || stream->duration == AV_NOPTS_VALUE) &&
+            params->format != AV_SAMPLE_FMT_NONE && params->sample_rate != 0) {
+          ++audio_count;
+        }
+        break;
+      default:
+        break;
+    }
+  }
+
+  DPRINTF("count_audio_streams: npackets=%" PRId64 ": audio_count=%u\n",
+          npackets, audio_count);
+
+fail:
+  avformat_close_input(&ic);
+
+  return audio_count;
+}
+
+static int64_t find_multi_audio_cutpoint(const char *infile, int64_t lo, int64_t hi) {
+  unsigned lo_count, hi_count;
+
+  lo_count = count_audio_streams(infile, lo);
+  hi_count = count_audio_streams(infile, hi);
+  if (lo_count == hi_count) {
+    return lo;
+  }
+
+  while (lo < hi) {
+    DPRINTF("find_multi_audio_cutpoint: %" PRId64 " - %" PRId64 "\n", lo, hi);
+    const int64_t mid = (lo + hi) / 2;
+    const unsigned c = count_audio_streams(infile, mid);
+    if (c == lo_count) {
+      lo = mid + 1;
+    } else {
+      hi = mid;
+    }
+  }
+
+  DPRINTF("find_multi_audio_cutpoint: result=%" PRId64 "\n", lo);
+  return lo;
+}
+
 int main(int argc, char *argv[])
 {
   static const struct option long_options[] = {
@@ -361,6 +418,8 @@ int main(int argc, char *argv[])
       }
     }
   }
+
+  npackets = find_multi_audio_cutpoint(infile, npackets, MAX_PACKETS);
 
   if (npackets < 0) {
     err = npackets;
