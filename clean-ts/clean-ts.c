@@ -317,6 +317,9 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
   avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
   FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
 
+  contexts = av_mallocz_array(ic->nb_streams, sizeof(*contexts));
+  initial_frames = av_mallocz_array(ic->nb_streams, sizeof(*initial_frames));
+
   for (i = 0; i < ic->nb_streams; i++) {
     const AVStream *stream = ic->streams[i];
     const AVCodecParameters *params = stream->codecpar;
@@ -331,9 +334,6 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
         break;
     }
   }
-
-  contexts = av_mallocz_array(audio_count, sizeof(*contexts));
-  initial_frames = av_mallocz_array(audio_count, sizeof(*initial_frames));
 
   for (i = 0; i < ic->nb_streams; i++) {
     const AVStream *stream = ic->streams[i];
@@ -353,7 +353,7 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
     AVCodecContext *avctx = contexts[packet.stream_index];
     if (avctx != NULL) {
       AVFrame *frame = initial_frames[packet.stream_index];
-      if ((err = avcodec_send_packet(contexts[packet.stream_index], &packet)) != 0) {
+      if ((err = avcodec_send_packet(avctx, &packet)) != 0) {
         // This cutpoint is invalid.
         DPRINTF("stream %d is invalid because avcodec_send_packet failed: %s\n", packet.stream_index, av_err2str(err));
         ++checked_audio_count;
@@ -363,7 +363,7 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
         av_frame_unref(frame);
         initial_frames[packet.stream_index] = NULL;
       } else {
-        if (avcodec_receive_frame(contexts[packet.stream_index], initial_frames[packet.stream_index]) != 0) {
+        if (avcodec_receive_frame(avctx, frame) != 0) {
           // continue
           DPRINTF("stream %d: avcodec_receive_frame failed\n", packet.stream_index);
         } else {
