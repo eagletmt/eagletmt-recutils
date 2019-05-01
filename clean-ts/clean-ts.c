@@ -304,10 +304,14 @@ static int64_t find_cutpoint(const char *infile, int64_t lo, int64_t hi, int hig
   return lo;
 }
 
-static unsigned count_audio_streams(const char *infile, int64_t npackets) {
+static int count_audio_streams(const char *infile, int64_t npackets) {
   AVFormatContext *ic = NULL;
+  AVCodecContext **contexts = NULL;
+  AVFrame **initial_frames = NULL;
   int err = 0;
-  unsigned i, audio_count = 0;
+  int audio_count = 0;
+  int is_valid = 1;
+  unsigned i;
 
   FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
   avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
@@ -328,17 +332,71 @@ static unsigned count_audio_streams(const char *infile, int64_t npackets) {
     }
   }
 
-  DPRINTF("count_audio_streams: npackets=%" PRId64 ": audio_count=%u\n",
-          npackets, audio_count);
+  contexts = av_mallocz_array(audio_count, sizeof(*contexts));
+  initial_frames = av_mallocz_array(audio_count, sizeof(*initial_frames));
+
+  for (i = 0; i < ic->nb_streams; i++) {
+    const AVStream *stream = ic->streams[i];
+    const AVCodecParameters *params = stream->codecpar;
+    if (params->codec_type == AVMEDIA_TYPE_AUDIO) {
+      AVCodec *codec = avcodec_find_decoder(params->codec_id);
+      AVCodecContext *avctx = avcodec_alloc_context3(codec);
+      avcodec_parameters_to_context(avctx, params);
+      avcodec_open2(avctx, codec, NULL);
+      contexts[stream->index] = avctx;
+      initial_frames[stream->index] = av_frame_alloc();
+    }
+  }
+
+  AVPacket packet;
+  int checked_audio_count = 0;
+  while (av_read_frame(ic, &packet) >= 0 && checked_audio_count < audio_count) {
+    AVCodecContext *avctx = contexts[packet.stream_index];
+    if (avctx != NULL) {
+      AVFrame *frame = initial_frames[packet.stream_index];
+      if ((err = avcodec_send_packet(contexts[packet.stream_index], &packet)) != 0) {
+        // This cutpoint is invalid.
+        DPRINTF("stream %d is invalid because avcodec_send_packet failed: %s\n", packet.stream_index, av_err2str(err));
+        ++checked_audio_count;
+        is_valid = 0;
+        avcodec_free_context(&avctx);
+        contexts[packet.stream_index] = NULL;
+        av_frame_unref(frame);
+        initial_frames[packet.stream_index] = NULL;
+      } else {
+        if (avcodec_receive_frame(contexts[packet.stream_index], initial_frames[packet.stream_index]) != 0) {
+          // continue
+          DPRINTF("stream %d: avcodec_receive_frame failed\n", packet.stream_index);
+        } else {
+          // This cutpoint is valid
+          DPRINTF("stream %d is valid\n", packet.stream_index);
+          ++checked_audio_count;
+          avcodec_free_context(&avctx);
+          contexts[packet.stream_index] = NULL;
+          av_frame_unref(frame);
+          initial_frames[packet.stream_index] = NULL;
+        }
+      }
+    }
+    av_packet_unref(&packet);
+  }
 
 fail:
+  av_free(contexts);
+  av_free(initial_frames);
   avformat_close_input(&ic);
 
-  return audio_count;
+  DPRINTF("count_audio_streams: npackets=%" PRId64 ": audio_count=%u is_valid=%d\n",
+          npackets, audio_count, is_valid);
+  if (err != 0 || !is_valid || checked_audio_count != audio_count) {
+    return -1;
+  } else {
+    return audio_count;
+  }
 }
 
 static int64_t find_multi_audio_cutpoint(const char *infile, int64_t lo, int64_t hi) {
-  unsigned lo_count, hi_count;
+  int lo_count, hi_count;
 
   lo_count = count_audio_streams(infile, lo);
   hi_count = count_audio_streams(infile, hi);
@@ -349,8 +407,8 @@ static int64_t find_multi_audio_cutpoint(const char *infile, int64_t lo, int64_t
   while (lo < hi) {
     DPRINTF("find_multi_audio_cutpoint: %" PRId64 " - %" PRId64 "\n", lo, hi);
     const int64_t mid = (lo + hi) / 2;
-    const unsigned c = count_audio_streams(infile, mid);
-    if (c == lo_count) {
+    const int c = count_audio_streams(infile, mid);
+    if (c == -1 || c == lo_count) {
       lo = mid + 1;
     } else {
       hi = mid;
