@@ -309,8 +309,7 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
   AVCodecContext **contexts = NULL;
   AVFrame **initial_frames = NULL;
   int err = 0;
-  int audio_count = 0, checked_audio_count = 0;
-  int is_valid = 1;
+  int audio_count = 0, checked_audio_count = 0, valid_audio_count = 0;
   unsigned i;
 
   FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
@@ -357,7 +356,6 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
         // This cutpoint is invalid.
         DPRINTF("stream %d is invalid because avcodec_send_packet failed: %s\n", packet.stream_index, av_err2str(err));
         ++checked_audio_count;
-        is_valid = 0;
         avcodec_free_context(&avctx);
         contexts[packet.stream_index] = NULL;
         av_frame_unref(frame);
@@ -370,6 +368,7 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
           // This cutpoint is valid
           DPRINTF("stream %d is valid\n", packet.stream_index);
           ++checked_audio_count;
+          ++valid_audio_count;
           avcodec_free_context(&avctx);
           contexts[packet.stream_index] = NULL;
           av_frame_unref(frame);
@@ -385,12 +384,13 @@ fail:
   av_free(initial_frames);
   avformat_close_input(&ic);
 
-  DPRINTF("count_audio_streams: npackets=%" PRId64 ": audio_count=%u is_valid=%d\n",
-          npackets, audio_count, is_valid);
-  if (err != 0 || !is_valid || checked_audio_count != audio_count) {
+  DPRINTF("count_audio_streams: npackets=%" PRId64 ": audio_count=%u valid_audio_count=%d\n",
+          npackets, audio_count, valid_audio_count);
+  if (err != 0 || valid_audio_count == 0 ||
+      checked_audio_count != audio_count) {
     return -1;
   } else {
-    return audio_count;
+    return valid_audio_count;
   }
 }
 
@@ -400,6 +400,7 @@ static int64_t find_multi_audio_cutpoint(const char *infile, int64_t lo, int64_t
   lo_count = count_audio_streams(infile, lo);
   hi_count = count_audio_streams(infile, hi);
   if (lo_count == hi_count) {
+    DPRINTF("find_multi_audio_cutpoint: No cutpoint found. npackets=%" PRId64 "\n", lo);
     return lo;
   }
 
@@ -414,7 +415,8 @@ static int64_t find_multi_audio_cutpoint(const char *infile, int64_t lo, int64_t
     }
   }
 
-  DPRINTF("find_multi_audio_cutpoint: result=%" PRId64 "\n", lo);
+  DPRINTF("find_multi_audio_cutpoint: Foud cutpoint. npackets=%" PRId64 "\n",
+          lo);
   return lo;
 }
 
