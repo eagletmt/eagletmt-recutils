@@ -309,7 +309,7 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
   AVCodecContext **contexts = NULL;
   AVFrame **initial_frames = NULL;
   int err = 0;
-  int audio_count = 0;
+  int audio_count = 0, checked_audio_count = 0;
   int is_valid = 1;
   unsigned i;
 
@@ -349,7 +349,6 @@ static int count_audio_streams(const char *infile, int64_t npackets) {
   }
 
   AVPacket packet;
-  int checked_audio_count = 0;
   while (av_read_frame(ic, &packet) >= 0 && checked_audio_count < audio_count) {
     AVCodecContext *avctx = contexts[packet.stream_index];
     if (avctx != NULL) {
