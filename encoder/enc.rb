@@ -41,7 +41,7 @@ end
 
 AUDIO_OPTS = %w[-acodec aac -ac 2 -ar 48000 -ab 128k]
 VIDEO_OPTS = %w[-vcodec libx264 -aspect 16:9 -filter:v yadif -s 1280x720 -crf 21 -b_strategy 2 -me_method umh -refs 8 -subq 7 -trellis 2 -deblock 1:1]
-MUX_OPTS = %w[-f mp4 -map 0]
+MUX_OPTS = %w[-f mp4 -map 0 -max_muxing_queue_size 500]
 
 def encode(src_path, dst_path)
   start = Time.now
