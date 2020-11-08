@@ -64,11 +64,9 @@ static int find_main_streams(const AVFormatContext *ic, AVStream **input_streams
         case AVMEDIA_TYPE_AUDIO:
         case AVMEDIA_TYPE_VIDEO:
           DPRINTF("programs[%d]: %s %u [0x%x] duration=%" PRId64 "\n",
-              program->id,
-              media_type == AVMEDIA_TYPE_AUDIO ? "audio" : "video",
-              stream->index,
-              stream->id,
-              stream->duration);
+                  program->id,
+                  media_type == AVMEDIA_TYPE_AUDIO ? "audio" : "video",
+                  stream->index, stream->id, stream->duration);
           if (stream->duration > 0LL || stream->duration == AV_NOPTS_VALUE) {
             if (num_found >= input_stream_size) {
               fprintf(stderr, "Too many streams found: %zu\n", num_found);
@@ -174,136 +172,6 @@ fail:
   return err;
 }
 
-static const int HD = 0x01, SD = 0x02;
-static const int FULL_HD_WIDTH = 1920, HD_WIDTH = 1440, SD_WIDTH = 720;
-
-static void detect_stream_status(const char *infile, int64_t npackets, int *hd_or_sd, int *valid_sample_fmt)
-{
-  AVFormatContext *ic = NULL;
-  int err = 0;
-  unsigned i;
-
-  *hd_or_sd = 0;
-  *valid_sample_fmt = -1;
-  FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
-  avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
-  FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
-
-  for (i = 0; i < ic->nb_streams; i++) {
-    const AVCodecParameters *params = ic->streams[i]->codecpar;
-    switch (params->codec_type) {
-      case AVMEDIA_TYPE_VIDEO:
-        if (params->codec_id == AV_CODEC_ID_MPEG2VIDEO) {
-          if (params->width == HD_WIDTH || params->width == FULL_HD_WIDTH) {
-            *hd_or_sd |= HD;
-          } else if (params->width == SD_WIDTH) {
-            *hd_or_sd |= SD;
-          }
-        }
-        break;
-      case AVMEDIA_TYPE_AUDIO:
-        if (params->format == AV_SAMPLE_FMT_NONE || params->sample_rate == 0) {
-          *valid_sample_fmt = 0;
-        } else {
-          if (*valid_sample_fmt == -1) {
-            *valid_sample_fmt = 1;
-          }
-        }
-        break;
-      default:
-        break;
-    }
-  }
-
-fail:
-  avformat_close_input(&ic);
-}
-
-static int has_stray_audio(const char *infile, int64_t npackets)
-{
-  AVFormatContext *ic = NULL;
-  int err = 0;
-  int ret = 0;
-  uint8_t *found_streams = NULL;
-
-  FAIL_IF_ERROR(avformat_open_input(&ic, infile, NULL, NULL));
-  avio_seek(ic->pb, npackets * TS_PACKET_SIZE, SEEK_SET);
-  FAIL_IF_ERROR(avformat_find_stream_info(ic, NULL));
-
-  /* When an audio stream is found outside the programs, ffmpeg seems to fail
-   * with the following error message.
-   *
-   * [mpegts @ 0x???????] AAC bitstream not in ADTS format and extradata missing
-   * av_interleaved_write_frame(): Invalid data found when processing input
-   *
-   * We have to avoid this kind of error.
-   */
-
-  found_streams = av_mallocz(ic->nb_streams);
-  unsigned i;
-  for (i = 0; i < ic->nb_programs; i++) {
-    const AVProgram *program = ic->programs[i];
-    unsigned j;
-    for (j = 0; j < program->nb_stream_indexes; j++) {
-      found_streams[program->stream_index[j]] = 1;
-    }
-  }
-
-  for (i = 0; i < ic->nb_streams; i++) {
-    if (!found_streams[i] && ic->streams[i]->codecpar->codec_type == AVMEDIA_TYPE_AUDIO) {
-      ret = 1;
-      break;
-    }
-  }
-
-fail:
-  avformat_close_input(&ic);
-  av_free(found_streams);
-  return ret;
-}
-
-static int higher_p(const char *infile, int64_t npackets, int higher_is_hd)
-{
-  if (has_stray_audio(infile, npackets)) {
-    fprintf(stderr, "%s: Stray audio is found at %"PRId64"*188\n", infile, npackets);
-    return 1;
-  } else {
-    int hd_or_sd, valid_sample_fmt;
-    detect_stream_status(infile, npackets, &hd_or_sd, &valid_sample_fmt);
-    if (!valid_sample_fmt) {
-      DPRINTF("invalid sample_fmt at %" PRId64 "\n", npackets);
-      return 1;
-    } else if ((hd_or_sd & HD) && (hd_or_sd & SD)) {
-      // If both are found, proper cutpoint is higher.
-      return 1;
-    } else if (hd_or_sd & HD) {
-      return !higher_is_hd;
-    } else if (hd_or_sd & SD) {
-      return higher_is_hd;
-    } else {
-      fprintf(stderr, "%s: Neither HD nor SD at %"PRId64"\n", infile, npackets);
-      return 1;
-    }
-  }
-}
-
-static int64_t find_cutpoint(const char *infile, int64_t lo, int64_t hi, int higher_is_hd)
-{
-  while (lo < hi) {
-    DPRINTF("%" PRId64 " - %" PRId64 "\n", lo, hi);
-    const int64_t mid = (lo + hi) / 2;
-    const int r = higher_p(infile, mid, higher_is_hd);
-    if (r < 0) {
-      return r;
-    } else if (r) {
-      lo = mid+1;
-    } else {
-      hi = mid;
-    }
-  }
-  return lo;
-}
-
 static unsigned count_audio_streams(const char *infile, int64_t npackets) {
   AVFormatContext *ic = NULL;
   int err = 0;
@@ -386,38 +254,8 @@ int main(int argc, char *argv[])
   av_log_set_level(AV_LOG_FATAL);
 
   static const int MAX_PACKETS = 200000;
-  int begin_hd_or_sd, end_hd_or_sd;
-  int begin_valid_sample_fmt, end_valid_sample_fmt;
-  detect_stream_status(infile, 0, &begin_hd_or_sd, &begin_valid_sample_fmt);
-  detect_stream_status(infile, MAX_PACKETS, &end_hd_or_sd, &end_valid_sample_fmt);
-  const int begin_hd = begin_hd_or_sd & HD;
-  const int end_hd = end_hd_or_sd & HD;
   int err;
-  DPRINTF("begin: hd_or_sd:%d valid_sample_fmt:%d\n", begin_hd_or_sd, begin_valid_sample_fmt);
-  DPRINTF("end:   hd_or_sd:%d valid_sample_fmt:%d\n", end_hd_or_sd, end_valid_sample_fmt);
   int64_t npackets = 0;
-
-  if (begin_hd) {
-    if (end_hd) {
-      if (!begin_valid_sample_fmt) {
-        npackets = find_cutpoint(infile, 0, MAX_PACKETS, 1);
-        DPRINTF("cutpoint for valid sample_fmt with HD: %" PRId64 "\n", npackets);
-      }
-    } else {
-      npackets = find_cutpoint(infile, 0, MAX_PACKETS, 0);
-      DPRINTF("cutpoint for HD -> SD: %" PRId64 "\n", npackets);
-    }
-  } else {
-    if (end_hd) {
-      npackets = find_cutpoint(infile, 0, MAX_PACKETS, 1);
-      DPRINTF("cutpoint for SD -> HD: %" PRId64 "\n", npackets);
-    } else {
-      if (!begin_valid_sample_fmt) {
-        npackets = find_cutpoint(infile, 0, MAX_PACKETS, 0);
-        DPRINTF("cutpoint for valid sample_fmt with SD: %" PRId64 "\n", npackets);
-      }
-    }
-  }
 
   npackets = find_multi_audio_cutpoint(infile, npackets, MAX_PACKETS);
 
