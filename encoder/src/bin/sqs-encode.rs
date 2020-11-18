@@ -59,13 +59,12 @@ async fn main() -> Result<(), anyhow::Error> {
                         futures::future::Either::Right(result) => {
                             match result {
                                 Ok(_) => {
-                                    sqs_client
-                                        .delete_message(rusoto_sqs::DeleteMessageRequest {
-                                            queue_url: config.sqs.queue_url.clone(),
-                                            receipt_handle,
-                                        })
-                                        .await
-                                        .context("failed to call sqs:DeleteMessage")?;
+                                    delete_message_with_retry(
+                                        &sqs_client,
+                                        &config.sqs.queue_url,
+                                        &receipt_handle,
+                                    )
+                                    .await?;
                                 }
                                 Err(e) => {
                                     eprintln!("encode failed: {:?}", e);
@@ -83,13 +82,8 @@ async fn main() -> Result<(), anyhow::Error> {
                         ts_path.display(),
                         mp4_path.display()
                     );
-                    sqs_client
-                        .delete_message(rusoto_sqs::DeleteMessageRequest {
-                            queue_url: config.sqs.queue_url.clone(),
-                            receipt_handle,
-                        })
-                        .await
-                        .context("failed to call sqs:DeleteMessage")?;
+                    delete_message_with_retry(&sqs_client, &config.sqs.queue_url, &receipt_handle)
+                        .await?;
                 } else {
                     println!("{} does not exist", ts_path.display());
                 }
@@ -100,4 +94,31 @@ async fn main() -> Result<(), anyhow::Error> {
     }
 
     Ok(())
+}
+
+async fn delete_message_with_retry<Sqs>(
+    sqs_client: &Sqs,
+    queue_url: &str,
+    receipt_handle: &str,
+) -> Result<(), anyhow::Error>
+where
+    Sqs: rusoto_sqs::Sqs,
+{
+    for i in 0..3 {
+        match sqs_client
+            .delete_message(rusoto_sqs::DeleteMessageRequest {
+                queue_url: queue_url.to_owned(),
+                receipt_handle: receipt_handle.to_owned(),
+            })
+            .await
+        {
+            Ok(_) => {
+                return Ok(());
+            }
+            Err(e) => {
+                eprintln!("[{}] failed to call sqs:DeleteMessage: {}", i, e);
+            }
+        }
+    }
+    Err(anyhow::anyhow!("sqs:DeleteMessage failed"))
 }
