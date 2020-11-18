@@ -4,7 +4,7 @@ async fn main() -> Result<(), anyhow::Error> {
     use futures::StreamExt as _;
     use rusoto_sqs::Sqs as _;
 
-    let config = encoder_reinforce::load_config()?;
+    let config = encoder::load_config()?;
     let sqs_client = rusoto_sqs::SqsClient::new(Default::default());
     let stop_path = std::path::Path::new("/tmp/stop-encode.txt");
     let base_dir = std::path::Path::new(&config.encoder.base_dir);
@@ -35,7 +35,7 @@ async fn main() -> Result<(), anyhow::Error> {
             if ts_path.exists() {
                 let interval = tokio::time::interval(tokio::time::Duration::from_secs(60))
                     .map(|_| futures::future::Either::Left(()));
-                let encode = futures::stream::once(encoder_reinforce::encode(&config, ts_path))
+                let encode = futures::stream::once(encoder::encode(&config, ts_path))
                     .map(|result| futures::future::Either::Right(result));
                 tokio::pin!(encode);
                 let mut stream = futures::stream::select(interval, encode);
