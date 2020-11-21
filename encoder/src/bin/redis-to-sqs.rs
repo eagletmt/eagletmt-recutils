@@ -3,7 +3,7 @@ async fn main() -> Result<(), anyhow::Error> {
     use redis::Commands as _;
     use rusoto_sqs::Sqs as _;
 
-    let config = encoder_reinforce::load_config()?;
+    let config = encoder::load_config()?;
     let redis_client = redis::Client::open(config.redis.url)?;
     let mut conn = redis_client.get_connection()?;
     let sqs_client = rusoto_sqs::SqsClient::new(Default::default());
