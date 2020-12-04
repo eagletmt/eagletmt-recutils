@@ -44,16 +44,16 @@ where
         .status()
         .await?;
     if !status.success() {
-        anyhow::anyhow!("Encode failure!");
+        return Err(anyhow::anyhow!("Encode failure!"));
     }
 
     let mp4_duration_micro = ffmpeg::format::input(&ts_path)?.duration();
     if (ts_duration_micro - mp4_duration_micro).abs() > EPS {
-        anyhow::anyhow!(
+        return Err(anyhow::anyhow!(
             "Duration mismatch: TS {}, MP4 {} (microsecond)",
             ts_duration_micro,
             mp4_duration_micro
-        );
+        ));
     }
     verify_audio_and_video(&mp4_path)?;
 
@@ -85,7 +85,7 @@ where
         .arg(&audio_path)
         .status()?;
     if !status.success() {
-        anyhow::anyhow!("ffmpeg -vn failed");
+        return Err(anyhow::anyhow!("ffmpeg -vn failed"));
     }
 
     let video_path = tempfile::NamedTempFile::new()?.into_temp_path();
@@ -96,17 +96,17 @@ where
         .arg(&video_path)
         .status()?;
     if !status.success() {
-        anyhow::anyhow!("ffmpeg -an failed");
+        return Err(anyhow::anyhow!("ffmpeg -an failed"));
     }
 
     let audio_duration_micro = ffmpeg::format::input(&audio_path)?.duration();
     let video_duration_micro = ffmpeg::format::input(&video_path)?.duration();
     if (audio_duration_micro - video_duration_micro).abs() > EPS {
-        anyhow::anyhow!(
+        return Err(anyhow::anyhow!(
             "Duration mismatch! audio:{} video:{} (microsecond)",
             audio_duration_micro,
             video_duration_micro
-        );
+        ));
     }
     Ok(())
 }
