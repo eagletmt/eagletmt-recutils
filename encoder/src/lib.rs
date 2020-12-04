@@ -1,4 +1,4 @@
-const EPS: i64 = 1 * 1000 * 1000; // 1 second
+const EPS: i64 = 1000 * 1000; // 1 second
 
 #[derive(serde::Deserialize)]
 pub struct Config {

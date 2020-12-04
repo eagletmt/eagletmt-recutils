@@ -36,7 +36,7 @@ async fn main() -> Result<(), anyhow::Error> {
                 let interval = tokio::time::interval(tokio::time::Duration::from_secs(60))
                     .map(|_| futures::future::Either::Left(()));
                 let encode = futures::stream::once(encoder::encode(&config, ts_path))
-                    .map(|result| futures::future::Either::Right(result));
+                    .map(futures::future::Either::Right);
                 tokio::pin!(encode);
                 let mut stream = futures::stream::select(interval, encode);
 
