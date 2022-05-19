@@ -106,10 +106,8 @@ public:
         ++p;
         const bool pcr_flag = !!(p[0] & 0x10);
         if (pcr_flag && pid == pcr_pid) {
-          const uint64_t pcr_base = uint64_t(p[1]<<25) | (p[2]<<17) | (p[3]<<9) | (p[4]<<1) | ((p[5] & 0x80)>>7);
-          const uint64_t pcr_ext = (p[5]&0x01) | p[6];
           // ISO 2.4.2.2
-          curts = system_clock::clock(pcr_base*300 + pcr_ext);
+          curts = system_clock::clock(parse_pcr(p+1));
         }
         p += adaptation_field_length;
       }
@@ -147,6 +145,30 @@ public:
         }
       }
     }
+  }/*}}}*/
+
+  // PCR (Program Clock Reference) is a 42 bit value that
+  // ranges across 6 bytes.
+  //
+  // +--------+--------+--------+--------+--------+--------+
+  // |BBBBBBBB|BBBBBBBB|BBBBBBBB|BBBBBBBB|B......E|EEEEEEEE|
+  // +--------+--------+--------+--------+--------+--------+
+  //
+  //  * "B" is 33-bit time based on a 90kHz clock.
+  //  * "E" is 9-bit time based on a 27MHz clock.
+  //  * "." is a reserved bit.
+  uint64_t parse_pcr(const unsigned char *buf)/*{{{*/
+  {
+    uint64_t b0 = buf[0];
+    uint64_t b1 = buf[1];
+    uint64_t b2 = buf[2];
+    uint64_t b3 = buf[3];
+    uint64_t b4 = buf[4];
+    uint64_t b5 = buf[5];
+
+    uint64_t base = (b0 << 25) | (b1 << 17) | (b2 << 9) | (b3 << 1) | (b4 >> 7);
+    uint64_t ext = ((b4 & 0x01) << 8) | b5;
+    return base * 300 + ext;
   }/*}}}*/
 
   void dump_caption(const unsigned char *payload)/*{{{*/
